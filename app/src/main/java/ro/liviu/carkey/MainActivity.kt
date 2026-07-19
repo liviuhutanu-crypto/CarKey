@@ -6,6 +6,8 @@ import android.view.MotionEvent
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import android.content.pm.PackageManager
+import android.widget.Toast
 
 class MainActivity : AppCompatActivity() {
 
@@ -57,6 +59,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
+        if (!BluetoothPermissions.hasPermissions(this)) {
+            BluetoothPermissions.request(this)
+        }
 
         image = findViewById(R.id.keyImage)
         status = findViewById(R.id.statusText)
@@ -214,5 +219,33 @@ class MainActivity : AppCompatActivity() {
         TRUNK
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == BluetoothPermissions.REQUEST_CODE) {
+
+            if (grantResults.isNotEmpty() &&
+                grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+
+                Toast.makeText(
+                    this,
+                    "Permisiuni Bluetooth acordate",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+            } else {
+
+                Toast.makeText(
+                    this,
+                    "Aplicația nu poate funcționa fără permisiunile Bluetooth",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
 }
