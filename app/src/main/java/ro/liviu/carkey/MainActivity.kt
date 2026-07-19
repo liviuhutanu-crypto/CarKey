@@ -1,5 +1,6 @@
 package ro.liviu.carkey
 
+import android.graphics.Matrix
 import android.os.Bundle
 import android.view.MotionEvent
 import android.widget.ImageView
@@ -11,35 +12,48 @@ class MainActivity : AppCompatActivity() {
     private lateinit var image: ImageView
     private lateinit var status: TextView
 
-    private val BLE_X = 347f
-    private val BLE_Y = 658f
+    /*
+     * Coordonatele sunt raportate la imagine:
+     * 0.0 = marginea stângă/sus
+     * 1.0 = marginea dreaptă/jos
+     *
+     * Nu sunt pixeli și nu depind de rezoluția telefonului.
+     */
+    private val buttons = listOf(
+        KeyButton(
+            type = ButtonType.BLE,
+            left = 0.250f,
+            top = 0.090f,
+            right = 0.420f,
+            bottom = 0.180f
+        ),
+        KeyButton(
+            type = ButtonType.UNLOCK,
+            left = 0.395f,
+            top = 0.300f,
+            right = 0.630f,
+            bottom = 0.455f
+        ),
+        KeyButton(
+            type = ButtonType.LOCK,
+            left = 0.435f,
+            top = 0.495f,
+            right = 0.675f,
+            bottom = 0.650f
+        ),
+        KeyButton(
+            type = ButtonType.TRUNK,
+            left = 0.470f,
+            top = 0.690f,
+            right = 0.730f,
+            bottom = 0.820f
+        )
+    )
 
-    private val UNLOCK_X = 555f
-    private val UNLOCK_Y = 1003f
 
-    private val LOCK_X = 603f
-    private val LOCK_Y = 1275f
-
-    private val TRUNK_X = 657f
-    private val TRUNK_Y = 1555f
-
-    private const val RADIUS = 120f
-
-    private fun inside(
-        x: Float,
-        y: Float,
-        bx: Float,
-        by: Float
-    ): Boolean {
-
-        val dx = x - bx
-        val dy = y - by
-
-        return dx * dx + dy * dy <= RADIUS * RADIUS
-    }
+    private var pressedButton: ButtonType? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
@@ -48,31 +62,157 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.statusText)
 
         image.setOnTouchListener { _, event ->
-
-            if (event.action == MotionEvent.ACTION_DOWN) {
-
-                when {
-
-                    inside(event.x, event.y, BLE_X, BLE_Y) ->
-                        status.text = "BLE"
-
-                    inside(event.x, event.y, UNLOCK_X, UNLOCK_Y) ->
-                        status.text = "UNLOCK"
-
-                    inside(event.x, event.y, LOCK_X, LOCK_Y) ->
-                        status.text = "LOCK"
-
-                    inside(event.x, event.y, TRUNK_X, TRUNK_Y) ->
-                        status.text = "TRUNK"
-
-                    else ->
-                        status.text = "În afara butoanelor"
-                }
-
-            }
-
+            handleTouch(event)
             true
         }
-
     }
+
+    private fun handleTouch(event: MotionEvent) {
+
+        val imagePoint = convertTouchToImageCoordinates(
+            touchX = event.x,
+            touchY = event.y
+        ) ?: return
+
+        val normalizedX = imagePoint.first
+        val normalizedY = imagePoint.second
+
+        when (event.actionMasked) {
+
+            MotionEvent.ACTION_DOWN -> {
+                pressedButton = findButton(
+                    x = normalizedX,
+                    y = normalizedY
+                )
+
+                when (pressedButton) {
+                    ButtonType.BLE -> {
+                        status.text = "BLE"
+                    }
+
+                    ButtonType.UNLOCK -> {
+                        status.text = "UNLOCK apăsat — D"
+                    }
+
+                    ButtonType.LOCK -> {
+                        status.text = "LOCK apăsat — I"
+                    }
+
+                    ButtonType.TRUNK -> {
+                        status.text = "TRUNK apăsat — P"
+                    }
+
+                    null -> {
+                        status.text = "În afara butoanelor"
+                    }
+                }
+            }
+
+            MotionEvent.ACTION_UP -> {
+                when (pressedButton) {
+                    ButtonType.UNLOCK -> {
+                        status.text = "UNLOCK eliberat — d"
+                    }
+
+                    ButtonType.LOCK -> {
+                        status.text = "LOCK eliberat — i"
+                    }
+
+                    ButtonType.TRUNK -> {
+                        status.text = "TRUNK eliberat"
+                    }
+
+                    ButtonType.BLE -> {
+                        status.text = "Deschidere meniu BLE"
+                    }
+
+                    null -> Unit
+                }
+
+                pressedButton = null
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                pressedButton = null
+                status.text = "Comandă anulată"
+            }
+        }
+    }
+
+    /*
+     * Transformă punctul atins pe ecran într-un punct din imagine.
+     *
+     * Funcționează și când imaginea este redimensionată sau centrată
+     * diferit pe telefoane cu alte rezoluții.
+     */
+    private fun convertTouchToImageCoordinates(
+        touchX: Float,
+        touchY: Float
+    ): Pair<Float, Float>? {
+
+        val drawable = image.drawable ?: return null
+
+        val inverseMatrix = Matrix()
+
+        if (!image.imageMatrix.invert(inverseMatrix)) {
+            return null
+        }
+
+        val points = floatArrayOf(touchX, touchY)
+        inverseMatrix.mapPoints(points)
+
+        val drawableWidth = drawable.intrinsicWidth.toFloat()
+        val drawableHeight = drawable.intrinsicHeight.toFloat()
+
+        if (drawableWidth <= 0f || drawableHeight <= 0f) {
+            return null
+        }
+
+        val normalizedX = points[0] / drawableWidth
+        val normalizedY = points[1] / drawableHeight
+
+        /*
+         * Ignorăm atingerile din spațiul liber din jurul imaginii,
+         * dacă ImageView-ul centrează imaginea.
+         */
+        if (
+            normalizedX < 0f ||
+            normalizedX > 1f ||
+            normalizedY < 0f ||
+            normalizedY > 1f
+        ) {
+            return null
+        }
+
+        return Pair(normalizedX, normalizedY)
+    }
+    private fun findButton(
+        x: Float,
+        y: Float
+    ): ButtonType? {
+
+        return buttons.firstOrNull { button ->
+            x >= button.left &&
+                    x <= button.right &&
+                    y >= button.top &&
+                    y <= button.bottom
+        }?.type
+    }
+
+    private data class KeyButton(
+        val type: ButtonType,
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float
+    )
+
+    private enum class ButtonType {
+        BLE,
+        UNLOCK,
+        LOCK,
+        TRUNK
+    }
+
+
 }
