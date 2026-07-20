@@ -122,26 +122,26 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 when (pressedButton) {
 
                     ButtonType.BLE -> {
-                        status.text = "BLE"
+                        showStatus("BLE")
                     }
 
                     ButtonType.UNLOCK -> {
-                        status.text = "UNLOCK apăsat — D"
+                        showStatus("UNLOCK apăsat — D")
                         bleManager.send('D')
                     }
 
                     ButtonType.LOCK -> {
-                        status.text = "LOCK apăsat — I"
+                        showStatus("LOCK apăsat — I")
                         bleManager.send('I')
                     }
 
                     ButtonType.TRUNK -> {
-                        status.text = "TRUNK apăsat — P"
+                        showStatus("TRUNK apăsat — P")
                         bleManager.send('P')
                     }
 
                     null -> {
-                        status.text = "În afara butoanelor"
+                        showStatus("În afara butoanelor")
                     }
                 }
             }
@@ -151,17 +151,17 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 when (pressedButton) {
 
                     ButtonType.UNLOCK -> {
-                        status.text = "UNLOCK eliberat — d"
+                        showStatus("UNLOCK eliberat — d")
                         bleManager.send('d')
                     }
 
                     ButtonType.LOCK -> {
-                        status.text = "LOCK eliberat — i"
+                        showStatus("LOCK eliberat — i")
                         bleManager.send('i')
                     }
 
                     ButtonType.TRUNK -> {
-                        status.text = "TRUNK eliberat"
+                        showStatus("TRUNK eliberat")
                     }
 
                     ButtonType.BLE -> {
@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
             MotionEvent.ACTION_CANCEL -> {
                 pressedButton = null
-                status.text = "Comandă anulată"
+                showStatus("Comandă anulată")
             }
         }
     }
@@ -200,7 +200,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         deviceDialog?.dismiss()
 
         deviceDialog = AlertDialog.Builder(this)
-            .setTitle("Dispozitive BLE")
+            .setTitle("Dispozitive...")
             .setAdapter(deviceListAdapter) { _, position ->
 
                 if (position !in foundDevices.indices) {
@@ -232,7 +232,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         deviceDialog?.show()
 
-        status.text = "Se caută dispozitive BLE..."
+        status.text = "Se caută chei ..."
         bleManager.startScan()
 
         mainHandler.removeCallbacks(stopScanRunnable)
@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     override fun onScanStarted() {
         runOnUiThread {
-            status.text = "Se caută dispozitive BLE..."
+            status.text = "Se caută chei..."
         }
     }
 
@@ -331,7 +331,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         runOnUiThread {
             if (foundDevices.isNotEmpty()) {
                 status.text =
-                    "Alege un dispozitiv din listă"
+                    "Alege din listă "
             }
         }
     }
@@ -348,7 +348,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
             Toast.makeText(
                 this,
-                "Conectare BLE reușită",
+                "Conectare reușită",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -404,6 +404,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 status.text =
                     "Aplicația nu poate folosi BLE fără permisiuni"
             }
+        }
+    }
+
+    private fun showStatus(text: String) {
+        runOnUiThread {
+            status.text = text
         }
     }
 
