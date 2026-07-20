@@ -1,17 +1,21 @@
 package ro.liviu.carkey
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
+import android.app.Dialog
 import android.bluetooth.BluetoothDevice
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
-import android.widget.ArrayAdapter
+import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity(), BleManager.Listener {
 
@@ -22,27 +26,21 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private val foundDevices = mutableListOf<BluetoothDevice>()
     private val foundRssi = mutableListOf<Int>()
-    private val deviceDescriptions = mutableListOf<String>()
 
-    private var deviceListAdapter: ArrayAdapter<String>? = null
-    private var deviceDialog: AlertDialog? = null
+    private var deviceListAdapter: BleDeviceAdapter? = null
+    private var deviceDialog: Dialog? = null
     private var pressedButton: ButtonType? = null
 
     private var autoReconnectEnabled = true
     private var isConnected = false
 
-
     private val autoReconnectRunnable = object : Runnable {
-
         override fun run() {
             if (autoReconnectEnabled && !isConnected) {
                 autoConnect()
             }
 
-            mainHandler.postDelayed(
-                this,
-                20_000L
-            )
+            mainHandler.postDelayed(this, 20_000L)
         }
     }
 
@@ -105,6 +103,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private fun handleTouch(event: MotionEvent) {
+
         val imagePoint = convertTouchToImageCoordinates(
             touchX = event.x,
             touchY = event.y
@@ -114,7 +113,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val normalizedY = imagePoint.second
 
         when (event.actionMasked) {
+
             MotionEvent.ACTION_DOWN -> {
+
                 pressedButton = findButton(
                     x = normalizedX,
                     y = normalizedY
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
 
             MotionEvent.ACTION_UP -> {
+
                 when (pressedButton) {
                     ButtonType.UNLOCK -> bleManager.send('d')
                     ButtonType.LOCK -> bleManager.send('i')
@@ -148,6 +150,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private fun openBleDeviceList() {
+
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
             return
@@ -155,63 +158,64 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         foundDevices.clear()
         foundRssi.clear()
-        deviceDescriptions.clear()
-
-        deviceListAdapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_list_item_1,
-            deviceDescriptions
-        )
 
         deviceDialog?.dismiss()
 
-        deviceDialog = AlertDialog.Builder(this)
-            .setTitle("Dispozitive BLE")
-            .setAdapter(deviceListAdapter) { _, position ->
-                if (position !in foundDevices.indices) {
-                    return@setAdapter
-                }
+        val dialog = Dialog(this)
+        dialog.setContentView(R.layout.dialog_ble)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
-                mainHandler.removeCallbacks(stopScanRunnable)
-                bleManager.stopScan()
+        val recyclerDevices =
+            dialog.findViewById<RecyclerView>(R.id.recyclerDevices)
 
-                val selectedDevice = foundDevices[position]
+        deviceListAdapter = BleDeviceAdapter(
+            devices = foundDevices,
+            rssiValues = foundRssi
+        ) { selectedDevice ->
 
-                deviceDialog?.dismiss()
-                deviceDialog = null
-
-                getSharedPreferences("CarKey", MODE_PRIVATE)
-                    .edit()
-                    .putString("last_device", selectedDevice.address)
-                    .apply()
-
-                bleManager.connect(selectedDevice)
-            }
-            .setNegativeButton("Anulează") { dialog, _ ->
-                mainHandler.removeCallbacks(stopScanRunnable)
-                bleManager.stopScan()
-                dialog.dismiss()
-            }
-            .create()
-
-        deviceDialog?.setOnDismissListener {
             mainHandler.removeCallbacks(stopScanRunnable)
             bleManager.stopScan()
-            deviceDialog = null
+
+            getSharedPreferences("CarKey", MODE_PRIVATE)
+                .edit()
+                .putString("last_device", selectedDevice.address)
+                .apply()
+
+            dialog.dismiss()
+            bleManager.connect(selectedDevice)
         }
 
-        deviceDialog?.show()
+        recyclerDevices.layoutManager = LinearLayoutManager(this)
+        recyclerDevices.adapter = deviceListAdapter
+
+        dialog.setOnDismissListener {
+
+            mainHandler.removeCallbacks(stopScanRunnable)
+            bleManager.stopScan()
+
+            deviceDialog = null
+            deviceListAdapter = null
+        }
+
+        dialog.show()
+
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.70f).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        deviceDialog = dialog
 
         bleManager.startScan()
 
         mainHandler.removeCallbacks(stopScanRunnable)
         mainHandler.postDelayed(stopScanRunnable, 10_000L)
     }
-
     private fun convertTouchToImageCoordinates(
         touchX: Float,
         touchY: Float
     ): Pair<Float, Float>? {
+
         val drawable = image.drawable ?: return null
         val inverseMatrix = Matrix()
 
@@ -246,6 +250,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         x: Float,
         y: Float
     ): ButtonType? {
+
         return buttons.firstOrNull { button ->
             x in button.left..button.right &&
                     y in button.top..button.bottom
@@ -258,6 +263,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         name: String,
         rssi: Int
     ) {
+
         runOnUiThread {
 
             val lastAddress = getSharedPreferences(
@@ -282,8 +288,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
             foundDevices.add(device)
             foundRssi.add(rssi)
-            deviceDescriptions.add("$name\nSemnal: $rssi dBm")
-            deviceListAdapter?.notifyDataSetChanged()
+            deviceListAdapter?.notifyItemInserted(foundDevices.lastIndex)
         }
     }
 
@@ -298,6 +303,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     override fun onError(message: String) {
+
         isConnected = false
 
         mainHandler.removeCallbacks(autoReconnectRunnable)
@@ -314,6 +320,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+
         super.onRequestPermissionsResult(
             requestCode,
             permissions,
@@ -338,7 +345,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     override fun onDestroy() {
 
         mainHandler.removeCallbacks(autoReconnectRunnable)
-
         mainHandler.removeCallbacks(stopScanRunnable)
 
         deviceDialog?.dismiss()
@@ -350,6 +356,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     override fun onDisconnected() {
+
         isConnected = false
 
         mainHandler.removeCallbacks(autoReconnectRunnable)
@@ -358,7 +365,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             2_000L
         )
     }
-
 
     private fun autoConnect() {
 
@@ -378,5 +384,4 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         }, 10_000)
     }
-
 }
