@@ -11,14 +11,11 @@ import android.os.Looper
 import android.view.MotionEvent
 import android.widget.ArrayAdapter
 import android.widget.ImageView
-import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private lateinit var image: ImageView
-    private lateinit var status: TextView
     private lateinit var bleManager: BleManager
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -28,20 +25,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private var deviceListAdapter: ArrayAdapter<String>? = null
     private var deviceDialog: AlertDialog? = null
+    private var pressedButton: ButtonType? = null
 
     private val stopScanRunnable = Runnable {
         bleManager.stopScan()
-
-        if (foundDevices.isEmpty()) {
-            status.text = "Nu a fost găsit niciun dispozitiv BLE"
-        }
     }
 
-    /*
-     * Coordonatele sunt raportate la imagine:
-     * 0.0 = marginea stângă/sus
-     * 1.0 = marginea dreaptă/jos
-     */
     private val buttons = listOf(
         KeyButton(
             type = ButtonType.BLE,
@@ -73,15 +62,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         )
     )
 
-    private var pressedButton: ButtonType? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContentView(R.layout.activity_main)
 
         image = findViewById(R.id.keyImage)
-        status = findViewById(R.id.statusText)
 
         bleManager = BleManager(
             context = this,
@@ -90,8 +75,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
-        } else {
-            status.text = "Apasă butonul BLE pentru conectare"
         }
 
         image.setOnTouchListener { _, event ->
@@ -101,7 +84,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private fun handleTouch(event: MotionEvent) {
-
         val imagePoint = convertTouchToImageCoordinates(
             touchX = event.x,
             touchY = event.y
@@ -111,63 +93,27 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val normalizedY = imagePoint.second
 
         when (event.actionMasked) {
-
             MotionEvent.ACTION_DOWN -> {
-
                 pressedButton = findButton(
                     x = normalizedX,
                     y = normalizedY
                 )
 
                 when (pressedButton) {
-
-                    ButtonType.BLE -> {
-                        showStatus("BLE")
-                    }
-
-                    ButtonType.UNLOCK -> {
-                        showStatus("UNLOCK apăsat — D")
-                        bleManager.send('D')
-                    }
-
-                    ButtonType.LOCK -> {
-                        showStatus("LOCK apăsat — I")
-                        bleManager.send('I')
-                    }
-
-                    ButtonType.TRUNK -> {
-                        showStatus("TRUNK apăsat — P")
-                        bleManager.send('P')
-                    }
-
-                    null -> {
-                        showStatus("În afara butoanelor")
-                    }
+                    ButtonType.UNLOCK -> bleManager.send('D')
+                    ButtonType.LOCK -> bleManager.send('I')
+                    ButtonType.TRUNK -> bleManager.send('P')
+                    ButtonType.BLE,
+                    null -> Unit
                 }
             }
 
             MotionEvent.ACTION_UP -> {
-
                 when (pressedButton) {
-
-                    ButtonType.UNLOCK -> {
-                        showStatus("UNLOCK eliberat — d")
-                        bleManager.send('d')
-                    }
-
-                    ButtonType.LOCK -> {
-                        showStatus("LOCK eliberat — i")
-                        bleManager.send('i')
-                    }
-
-                    ButtonType.TRUNK -> {
-                        showStatus("TRUNK eliberat")
-                    }
-
-                    ButtonType.BLE -> {
-                        openBleDeviceList()
-                    }
-
+                    ButtonType.UNLOCK -> bleManager.send('d')
+                    ButtonType.LOCK -> bleManager.send('i')
+                    ButtonType.BLE -> openBleDeviceList()
+                    ButtonType.TRUNK,
                     null -> Unit
                 }
 
@@ -176,13 +122,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
             MotionEvent.ACTION_CANCEL -> {
                 pressedButton = null
-                showStatus("Comandă anulată")
             }
         }
     }
 
     private fun openBleDeviceList() {
-
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
             return
@@ -200,9 +144,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         deviceDialog?.dismiss()
 
         deviceDialog = AlertDialog.Builder(this)
-            .setTitle("Dispozitive...")
+            .setTitle("Dispozitive BLE")
             .setAdapter(deviceListAdapter) { _, position ->
-
                 if (position !in foundDevices.indices) {
                     return@setAdapter
                 }
@@ -232,21 +175,16 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         deviceDialog?.show()
 
-        status.text = "Se caută chei ..."
         bleManager.startScan()
 
         mainHandler.removeCallbacks(stopScanRunnable)
         mainHandler.postDelayed(stopScanRunnable, 10_000L)
     }
 
-    /*
-     * Transformă punctul atins pe ecran într-un punct din imagine.
-     */
     private fun convertTouchToImageCoordinates(
         touchX: Float,
         touchY: Float
     ): Pair<Float, Float>? {
-
         val drawable = image.drawable ?: return null
         val inverseMatrix = Matrix()
 
@@ -268,27 +206,22 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val normalizedY = points[1] / drawableHeight
 
         if (
-            normalizedX < 0f ||
-            normalizedX > 1f ||
-            normalizedY < 0f ||
-            normalizedY > 1f
+            normalizedX !in 0f..1f ||
+            normalizedY !in 0f..1f
         ) {
             return null
         }
 
-        return Pair(normalizedX, normalizedY)
+        return normalizedX to normalizedY
     }
 
     private fun findButton(
         x: Float,
         y: Float
     ): ButtonType? {
-
         return buttons.firstOrNull { button ->
-            x >= button.left &&
-                    x <= button.right &&
-                    y >= button.top &&
-                    y <= button.bottom
+            x in button.left..button.right &&
+                    y in button.top..button.bottom
         }?.type
     }
 
@@ -299,7 +232,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         rssi: Int
     ) {
         runOnUiThread {
-
             val alreadyExists = foundDevices.any {
                 it.address == device.address
             }
@@ -309,74 +241,24 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
 
             foundDevices.add(device)
-
-            deviceDescriptions.add(
-                "$name\nSemnal: $rssi dBm"
-            )
-
+            deviceDescriptions.add("$name\nSemnal: $rssi dBm")
             deviceListAdapter?.notifyDataSetChanged()
-
-            status.text =
-                "Dispozitive găsite: ${foundDevices.size}"
         }
     }
 
-    override fun onScanStarted() {
-        runOnUiThread {
-            status.text = "Se caută chei..."
-        }
-    }
+    override fun onScanStarted() = Unit
 
-    override fun onScanStopped() {
-        runOnUiThread {
-            if (foundDevices.isNotEmpty()) {
-                status.text =
-                    "Alege din listă "
-            }
-        }
-    }
+    override fun onScanStopped() = Unit
 
-    override fun onConnecting(name: String) {
-        runOnUiThread {
-            status.text = "Se conectează la $name..."
-        }
-    }
+    override fun onConnecting(name: String) = Unit
 
-    override fun onConnected(name: String) {
-        runOnUiThread {
-            status.text = "Conectat la $name"
+    override fun onConnected(name: String) = Unit
 
-            Toast.makeText(
-                this,
-                "Conectare reușită",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
+    override fun onDisconnected() = Unit
 
-    override fun onDisconnected() {
-        runOnUiThread {
-            status.text = "BLE deconectat"
-        }
-    }
+    override fun onError(message: String) = Unit
 
-    override fun onError(message: String) {
-        runOnUiThread {
-            status.text = message
-
-            Toast.makeText(
-                this,
-                message,
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    override fun onCommandSent(command: Char) {
-        runOnUiThread {
-            status.text = "Comanda $command a fost trimisă"
-        }
-    }
+    override fun onCommandSent(command: Char) = Unit
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -389,27 +271,18 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             grantResults
         )
 
-        if (requestCode == BluetoothPermissions.REQUEST_CODE) {
-
-            val granted =
-                grantResults.isNotEmpty() &&
-                        grantResults.all {
-                            it == PackageManager.PERMISSION_GRANTED
-                        }
-
-            if (granted) {
-                status.text =
-                    "Permisiuni acordate. Apasă butonul BLE."
-            } else {
-                status.text =
-                    "Aplicația nu poate folosi BLE fără permisiuni"
-            }
+        if (requestCode != BluetoothPermissions.REQUEST_CODE) {
+            return
         }
-    }
 
-    private fun showStatus(text: String) {
-        runOnUiThread {
-            status.text = text
+        val granted =
+            grantResults.isNotEmpty() &&
+                    grantResults.all {
+                        it == PackageManager.PERMISSION_GRANTED
+                    }
+
+        if (!granted) {
+            return
         }
     }
 
@@ -423,5 +296,4 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         super.onDestroy()
     }
-
 }
