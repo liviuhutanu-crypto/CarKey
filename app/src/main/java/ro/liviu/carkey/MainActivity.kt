@@ -418,18 +418,4 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         super.onDestroy()
     }
 
-    private data class KeyButton(
-        val type: ButtonType,
-        val left: Float,
-        val top: Float,
-        val right: Float,
-        val bottom: Float
-    )
-
-    private enum class ButtonType {
-        BLE,
-        UNLOCK,
-        LOCK,
-        TRUNK
-    }
 }
