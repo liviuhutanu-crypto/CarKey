@@ -1,25 +1,46 @@
 package ro.liviu.carkey
 
+import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.bluetooth.BluetoothDevice
+import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
+import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private lateinit var image: ImageView
     private lateinit var status: TextView
+    private lateinit var bleManager: BleManager
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val foundDevices = mutableListOf<BluetoothDevice>()
+    private val deviceDescriptions = mutableListOf<String>()
+
+    private var deviceListAdapter: ArrayAdapter<String>? = null
+    private var deviceDialog: AlertDialog? = null
+
+    private val stopScanRunnable = Runnable {
+        bleManager.stopScan()
+
+        if (foundDevices.isEmpty()) {
+            status.text = "Nu a fost găsit niciun dispozitiv BLE"
+        }
+    }
 
     /*
      * Coordonatele sunt raportate la imagine:
      * 0.0 = marginea stângă/sus
      * 1.0 = marginea dreaptă/jos
-     *
-     * Nu sunt pixeli și nu depind de rezoluția telefonului.
      */
     private val buttons = listOf(
         KeyButton(
@@ -52,19 +73,26 @@ class MainActivity : AppCompatActivity() {
         )
     )
 
-
     private var pressedButton: ButtonType? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
-        if (!BluetoothPermissions.hasPermissions(this)) {
-            BluetoothPermissions.request(this)
-        }
 
         image = findViewById(R.id.keyImage)
         status = findViewById(R.id.statusText)
+
+        bleManager = BleManager(
+            context = this,
+            listener = this
+        )
+
+        if (!BluetoothPermissions.hasPermissions(this)) {
+            BluetoothPermissions.request(this)
+        } else {
+            status.text = "Apasă butonul BLE pentru conectare"
+        }
 
         image.setOnTouchListener { _, event ->
             handleTouch(event)
@@ -85,26 +113,31 @@ class MainActivity : AppCompatActivity() {
         when (event.actionMasked) {
 
             MotionEvent.ACTION_DOWN -> {
+
                 pressedButton = findButton(
                     x = normalizedX,
                     y = normalizedY
                 )
 
                 when (pressedButton) {
+
                     ButtonType.BLE -> {
                         status.text = "BLE"
                     }
 
                     ButtonType.UNLOCK -> {
                         status.text = "UNLOCK apăsat — D"
+                        bleManager.send('D')
                     }
 
                     ButtonType.LOCK -> {
                         status.text = "LOCK apăsat — I"
+                        bleManager.send('I')
                     }
 
                     ButtonType.TRUNK -> {
                         status.text = "TRUNK apăsat — P"
+                        bleManager.send('P')
                     }
 
                     null -> {
@@ -114,13 +147,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             MotionEvent.ACTION_UP -> {
+
                 when (pressedButton) {
+
                     ButtonType.UNLOCK -> {
                         status.text = "UNLOCK eliberat — d"
+                        bleManager.send('d')
                     }
 
                     ButtonType.LOCK -> {
                         status.text = "LOCK eliberat — i"
+                        bleManager.send('i')
                     }
 
                     ButtonType.TRUNK -> {
@@ -128,7 +165,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     ButtonType.BLE -> {
-                        status.text = "Deschidere meniu BLE"
+                        openBleDeviceList()
                     }
 
                     null -> Unit
@@ -144,11 +181,66 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openBleDeviceList() {
+
+        if (!BluetoothPermissions.hasPermissions(this)) {
+            BluetoothPermissions.request(this)
+            return
+        }
+
+        foundDevices.clear()
+        deviceDescriptions.clear()
+
+        deviceListAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            deviceDescriptions
+        )
+
+        deviceDialog?.dismiss()
+
+        deviceDialog = AlertDialog.Builder(this)
+            .setTitle("Dispozitive BLE")
+            .setAdapter(deviceListAdapter) { _, position ->
+
+                if (position !in foundDevices.indices) {
+                    return@setAdapter
+                }
+
+                mainHandler.removeCallbacks(stopScanRunnable)
+                bleManager.stopScan()
+
+                val selectedDevice = foundDevices[position]
+
+                deviceDialog?.dismiss()
+                deviceDialog = null
+
+                bleManager.connect(selectedDevice)
+            }
+            .setNegativeButton("Anulează") { dialog, _ ->
+                mainHandler.removeCallbacks(stopScanRunnable)
+                bleManager.stopScan()
+                dialog.dismiss()
+            }
+            .create()
+
+        deviceDialog?.setOnDismissListener {
+            mainHandler.removeCallbacks(stopScanRunnable)
+            bleManager.stopScan()
+            deviceDialog = null
+        }
+
+        deviceDialog?.show()
+
+        status.text = "Se caută dispozitive BLE..."
+        bleManager.startScan()
+
+        mainHandler.removeCallbacks(stopScanRunnable)
+        mainHandler.postDelayed(stopScanRunnable, 10_000L)
+    }
+
     /*
      * Transformă punctul atins pe ecran într-un punct din imagine.
-     *
-     * Funcționează și când imaginea este redimensionată sau centrată
-     * diferit pe telefoane cu alte rezoluții.
      */
     private fun convertTouchToImageCoordinates(
         touchX: Float,
@@ -156,7 +248,6 @@ class MainActivity : AppCompatActivity() {
     ): Pair<Float, Float>? {
 
         val drawable = image.drawable ?: return null
-
         val inverseMatrix = Matrix()
 
         if (!image.imageMatrix.invert(inverseMatrix)) {
@@ -176,10 +267,6 @@ class MainActivity : AppCompatActivity() {
         val normalizedX = points[0] / drawableWidth
         val normalizedY = points[1] / drawableHeight
 
-        /*
-         * Ignorăm atingerile din spațiul liber din jurul imaginii,
-         * dacă ImageView-ul centrează imaginea.
-         */
         if (
             normalizedX < 0f ||
             normalizedX > 1f ||
@@ -191,6 +278,7 @@ class MainActivity : AppCompatActivity() {
 
         return Pair(normalizedX, normalizedY)
     }
+
     private fun findButton(
         x: Float,
         y: Float
@@ -202,6 +290,132 @@ class MainActivity : AppCompatActivity() {
                     y >= button.top &&
                     y <= button.bottom
         }?.type
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun onDeviceFound(
+        device: BluetoothDevice,
+        name: String,
+        rssi: Int
+    ) {
+        runOnUiThread {
+
+            val alreadyExists = foundDevices.any {
+                it.address == device.address
+            }
+
+            if (alreadyExists) {
+                return@runOnUiThread
+            }
+
+            foundDevices.add(device)
+
+            deviceDescriptions.add(
+                "$name\nSemnal: $rssi dBm"
+            )
+
+            deviceListAdapter?.notifyDataSetChanged()
+
+            status.text =
+                "Dispozitive găsite: ${foundDevices.size}"
+        }
+    }
+
+    override fun onScanStarted() {
+        runOnUiThread {
+            status.text = "Se caută dispozitive BLE..."
+        }
+    }
+
+    override fun onScanStopped() {
+        runOnUiThread {
+            if (foundDevices.isNotEmpty()) {
+                status.text =
+                    "Alege un dispozitiv din listă"
+            }
+        }
+    }
+
+    override fun onConnecting(name: String) {
+        runOnUiThread {
+            status.text = "Se conectează la $name..."
+        }
+    }
+
+    override fun onConnected(name: String) {
+        runOnUiThread {
+            status.text = "Conectat la $name"
+
+            Toast.makeText(
+                this,
+                "Conectare BLE reușită",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    override fun onDisconnected() {
+        runOnUiThread {
+            status.text = "BLE deconectat"
+        }
+    }
+
+    override fun onError(message: String) {
+        runOnUiThread {
+            status.text = message
+
+            Toast.makeText(
+                this,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    override fun onCommandSent(command: Char) {
+        runOnUiThread {
+            status.text = "Comanda $command a fost trimisă"
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (requestCode == BluetoothPermissions.REQUEST_CODE) {
+
+            val granted =
+                grantResults.isNotEmpty() &&
+                        grantResults.all {
+                            it == PackageManager.PERMISSION_GRANTED
+                        }
+
+            if (granted) {
+                status.text =
+                    "Permisiuni acordate. Apasă butonul BLE."
+            } else {
+                status.text =
+                    "Aplicația nu poate folosi BLE fără permisiuni"
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(stopScanRunnable)
+
+        deviceDialog?.dismiss()
+        deviceDialog = null
+
+        bleManager.disconnect()
+
+        super.onDestroy()
     }
 
     private data class KeyButton(
@@ -218,34 +432,4 @@ class MainActivity : AppCompatActivity() {
         LOCK,
         TRUNK
     }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == BluetoothPermissions.REQUEST_CODE) {
-
-            if (grantResults.isNotEmpty() &&
-                grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-
-                Toast.makeText(
-                    this,
-                    "Permisiuni Bluetooth acordate",
-                    Toast.LENGTH_SHORT
-                ).show()
-
-            } else {
-
-                Toast.makeText(
-                    this,
-                    "Aplicația nu poate funcționa fără permisiunile Bluetooth",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
 }
