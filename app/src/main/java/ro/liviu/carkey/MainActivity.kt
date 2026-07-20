@@ -154,6 +154,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
 
         foundDevices.clear()
+        foundRssi.clear()
         deviceDescriptions.clear()
 
         deviceListAdapter = ArrayAdapter(
@@ -258,27 +259,24 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         rssi: Int
     ) {
         runOnUiThread {
-            val alreadyExists = foundDevices.any {
-                it.address == device.address
-            }
-
-            if (alreadyExists) {
-                return@runOnUiThread
-            }
 
             val lastAddress = getSharedPreferences(
                 "CarKey",
                 MODE_PRIVATE
             ).getString("last_device", null)
 
-            if (device.address == lastAddress) {
-
+            if (device.address == lastAddress && !isConnected) {
                 mainHandler.removeCallbacks(stopScanRunnable)
-
                 bleManager.stopScan()
-
                 bleManager.connect(device)
+                return@runOnUiThread
+            }
 
+            val alreadyExists = foundDevices.any {
+                it.address == device.address
+            }
+
+            if (alreadyExists) {
                 return@runOnUiThread
             }
 
