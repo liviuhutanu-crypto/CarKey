@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             listener = this
         )
 
+        autoConnect()
+
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
         }
@@ -158,6 +160,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 deviceDialog?.dismiss()
                 deviceDialog = null
 
+                getSharedPreferences("CarKey", MODE_PRIVATE)
+                    .edit()
+                    .putString("last_device", selectedDevice.address)
+                    .apply()
+
                 bleManager.connect(selectedDevice)
             }
             .setNegativeButton("Anulează") { dialog, _ ->
@@ -240,6 +247,22 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 return@runOnUiThread
             }
 
+            val lastAddress = getSharedPreferences(
+                "CarKey",
+                MODE_PRIVATE
+            ).getString("last_device", null)
+
+            if (device.address == lastAddress) {
+
+                mainHandler.removeCallbacks(stopScanRunnable)
+
+                bleManager.stopScan()
+
+                bleManager.connect(device)
+
+                return@runOnUiThread
+            }
+
             foundDevices.add(device)
             deviceDescriptions.add("$name\nSemnal: $rssi dBm")
             deviceListAdapter?.notifyDataSetChanged()
@@ -296,4 +319,24 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         super.onDestroy()
     }
+
+    private fun autoConnect() {
+
+        if (!BluetoothPermissions.hasPermissions(this))
+            return
+
+        val address = getSharedPreferences(
+            "CarKey",
+            MODE_PRIVATE
+        ).getString("last_device", null) ?: return
+
+        bleManager.startScan()
+
+        mainHandler.postDelayed({
+
+            bleManager.stopScan()
+
+        }, 10_000)
+    }
+
 }
