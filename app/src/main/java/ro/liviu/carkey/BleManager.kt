@@ -216,33 +216,46 @@ class BleManager(
                 status: Int,
                 newState: Int
             ) {
-
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    gatt.close()
-
-                    bluetoothGatt = null
-                    rxCharacteristic = null
-
-                    listener.onError(
-                        "Eroare conexiune GATT: $status"
-                    )
-                    return
-                }
-
                 when (newState) {
 
                     BluetoothProfile.STATE_CONNECTED -> {
-                        bluetoothGatt = gatt
-                        gatt.discoverServices()
+                        if (status == BluetoothGatt.GATT_SUCCESS) {
+                            bluetoothGatt = gatt
+                            gatt.discoverServices()
+                        } else {
+                            rxCharacteristic = null
+
+                            if (bluetoothGatt === gatt) {
+                                bluetoothGatt = null
+                            }
+
+                            gatt.close()
+                            listener.onDisconnected()
+                        }
                     }
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         rxCharacteristic = null
-                        bluetoothGatt = null
+
+                        if (bluetoothGatt === gatt) {
+                            bluetoothGatt = null
+                        }
 
                         gatt.close()
-
                         listener.onDisconnected()
+                    }
+
+                    else -> {
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            rxCharacteristic = null
+
+                            if (bluetoothGatt === gatt) {
+                                bluetoothGatt = null
+                            }
+
+                            gatt.close()
+                            listener.onDisconnected()
+                        }
                     }
                 }
             }

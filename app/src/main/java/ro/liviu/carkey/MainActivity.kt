@@ -21,11 +21,30 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val foundDevices = mutableListOf<BluetoothDevice>()
+    private val foundRssi = mutableListOf<Int>()
     private val deviceDescriptions = mutableListOf<String>()
 
     private var deviceListAdapter: ArrayAdapter<String>? = null
     private var deviceDialog: AlertDialog? = null
     private var pressedButton: ButtonType? = null
+
+    private var autoReconnectEnabled = true
+    private var isConnected = false
+
+
+    private val autoReconnectRunnable = object : Runnable {
+
+        override fun run() {
+            if (autoReconnectEnabled && !isConnected) {
+                autoConnect()
+            }
+
+            mainHandler.postDelayed(
+                this,
+                20_000L
+            )
+        }
+    }
 
     private val stopScanRunnable = Runnable {
         bleManager.stopScan()
@@ -73,7 +92,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             listener = this
         )
 
-        autoConnect()
+        mainHandler.post(autoReconnectRunnable)
 
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
@@ -264,6 +283,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
 
             foundDevices.add(device)
+            foundRssi.add(rssi)
             deviceDescriptions.add("$name\nSemnal: $rssi dBm")
             deviceListAdapter?.notifyDataSetChanged()
         }
@@ -275,11 +295,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     override fun onConnecting(name: String) = Unit
 
-    override fun onConnected(name: String) = Unit
+    override fun onConnected(name: String) {
+        isConnected = true
+    }
 
-    override fun onDisconnected() = Unit
+    override fun onError(message: String) {
+        isConnected = false
 
-    override fun onError(message: String) = Unit
+        mainHandler.removeCallbacks(autoReconnectRunnable)
+        mainHandler.postDelayed(
+            autoReconnectRunnable,
+            2_000L
+        )
+    }
 
     override fun onCommandSent(command: Char) = Unit
 
@@ -310,6 +338,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     override fun onDestroy() {
+
+        mainHandler.removeCallbacks(autoReconnectRunnable)
+
         mainHandler.removeCallbacks(stopScanRunnable)
 
         deviceDialog?.dismiss()
@@ -319,6 +350,17 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         super.onDestroy()
     }
+
+    override fun onDisconnected() {
+        isConnected = false
+
+        mainHandler.removeCallbacks(autoReconnectRunnable)
+        mainHandler.postDelayed(
+            autoReconnectRunnable,
+            2_000L
+        )
+    }
+
 
     private fun autoConnect() {
 
