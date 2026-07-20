@@ -16,6 +16,11 @@ import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.content.Context
+import android.view.View
 
 class MainActivity : AppCompatActivity(), BleManager.Listener {
 
@@ -292,15 +297,34 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
     }
 
-    override fun onScanStarted() = Unit
+    override fun onScanStarted() {
+        setBleLedColor("#2196F3") // albastru
+    }
 
     override fun onScanStopped() = Unit
 
-    override fun onConnecting(name: String) = Unit
+    override fun onConnecting(name: String) {
+        setBleLedColor("#FFC107")
+    }
 
     override fun onConnected(name: String) {
+        setBleLedColor("#4CAF50")
         isConnected = true
     }
+
+    override fun onDisconnected() {
+
+        setBleLedColor("#808080") // gri
+
+        isConnected = false
+
+        mainHandler.removeCallbacks(autoReconnectRunnable)
+        mainHandler.postDelayed(
+            autoReconnectRunnable,
+            2_000L
+        )
+    }
+
 
     override fun onError(message: String) {
 
@@ -313,7 +337,20 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         )
     }
 
-    override fun onCommandSent(command: Char) = Unit
+    override fun onFeedback(message: String) {
+
+        runOnUiThread {
+
+            when (message) {
+
+                "OK:D",
+                "OK:I",
+                "OK:P" -> {
+                    vibrateSuccess()
+                }
+            }
+        }
+    }
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -342,6 +379,44 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
     }
 
+    private fun vibrateSuccess() {
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+
+            val vibratorManager =
+                getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
+                        as VibratorManager
+
+            vibratorManager.defaultVibrator.vibrate(
+                VibrationEffect.createOneShot(
+                    30,
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+            )
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            val vibrator =
+                getSystemService(Context.VIBRATOR_SERVICE)
+                        as Vibrator
+
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(30)
+        }
+    }
+
+    private fun setBleLedColor(color: String) {
+        runOnUiThread {
+            findViewById<View>(R.id.bleStatusLed)
+                .backgroundTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.parseColor(color)
+                )
+        }
+    }
+
+
     override fun onDestroy() {
 
         mainHandler.removeCallbacks(autoReconnectRunnable)
@@ -355,16 +430,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         super.onDestroy()
     }
 
-    override fun onDisconnected() {
-
-        isConnected = false
-
-        mainHandler.removeCallbacks(autoReconnectRunnable)
-        mainHandler.postDelayed(
-            autoReconnectRunnable,
-            2_000L
-        )
-    }
 
     private fun autoConnect() {
 

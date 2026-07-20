@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
@@ -26,15 +27,22 @@ class BleManager(
         fun onConnected(name: String)
         fun onDisconnected()
         fun onError(message: String)
-        fun onCommandSent(command: Char)
+        fun onFeedback(message: String)
     }
 
     companion object {
+
         val SERVICE_UUID: UUID =
             UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 
         val RX_UUID: UUID =
             UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+
+        val TX_UUID: UUID =
+            UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+
+        private val CCCD_UUID: UUID =
+            UUID.fromString("00002902-0000-1000-8000-00805F9B34FB")
     }
 
     private val appContext = context.applicationContext
@@ -49,17 +57,20 @@ class BleManager(
     private var bluetoothGatt: BluetoothGatt? = null
 
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
+    private var txCharacteristic: BluetoothGattCharacteristic? = null
 
     private var scanning = false
 
     val isConnected: Boolean
-        get() = bluetoothGatt != null && rxCharacteristic != null
+        get() =
+            bluetoothGatt != null &&
+                    rxCharacteristic != null &&
+                    txCharacteristic != null
 
     private val scanCallback = object : ScanCallback() {
 
         @SuppressLint("MissingPermission")
         override fun onScanResult(
-
             callbackType: Int,
             result: ScanResult
         ) {
@@ -79,6 +90,7 @@ class BleManager(
 
         override fun onScanFailed(errorCode: Int) {
             scanning = false
+
             listener.onError(
                 "Scanarea BLE a eșuat. Cod: $errorCode"
             )
@@ -103,10 +115,13 @@ class BleManager(
         }
 
         scanning = true
+
         scanner.startScan(
             null,
             android.bluetooth.le.ScanSettings.Builder()
-                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setScanMode(
+                    android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY
+                )
                 .build(),
             scanCallback
         )
@@ -138,28 +153,28 @@ class BleManager(
 
         listener.onConnecting(name)
 
-        bluetoothGatt = if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-        ) {
-            device.connectGatt(
-                appContext,
-                false,
-                gattCallback,
-                BluetoothDevice.TRANSPORT_LE
-            )
-        } else {
-            device.connectGatt(
-                appContext,
-                false,
-                gattCallback
-            )
-        }
+        bluetoothGatt =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                device.connectGatt(
+                    appContext,
+                    false,
+                    gattCallback,
+                    BluetoothDevice.TRANSPORT_LE
+                )
+            } else {
+                device.connectGatt(
+                    appContext,
+                    false,
+                    gattCallback
+                )
+            }
     }
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
 
         rxCharacteristic = null
+        txCharacteristic = null
 
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
@@ -176,27 +191,31 @@ class BleManager(
         }
 
         val characteristic = rxCharacteristic ?: run {
-            listener.onError("Caracteristica RX nu este disponibilă")
+            listener.onError(
+                "Caracteristica RX nu este disponibilă"
+            )
             return false
         }
 
         val data = byteArrayOf(command.code.toByte())
 
-        val started = if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        ) {
-            gatt.writeCharacteristic(
-                characteristic,
-                data,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            ) == BluetoothStatusCodes.SUCCESS
-        } else {
-            @Suppress("DEPRECATION")
-            characteristic.value = data
+        val started =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 
-            @Suppress("DEPRECATION")
-            gatt.writeCharacteristic(characteristic)
-        }
+                gatt.writeCharacteristic(
+                    characteristic,
+                    data,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                ) == BluetoothStatusCodes.SUCCESS
+
+            } else {
+
+                @Suppress("DEPRECATION")
+                characteristic.value = data
+
+                @Suppress("DEPRECATION")
+                gatt.writeCharacteristic(characteristic)
+            }
 
         if (!started) {
             listener.onError(
@@ -205,6 +224,79 @@ class BleManager(
         }
 
         return started
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableTxNotifications(
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic
+    ) {
+
+        val notificationEnabled =
+            gatt.setCharacteristicNotification(
+                characteristic,
+                true
+            )
+
+        if (!notificationEnabled) {
+            listener.onError(
+                "Notificările TX nu au putut fi activate"
+            )
+            return
+        }
+
+        val descriptor =
+            characteristic.getDescriptor(CCCD_UUID)
+
+        if (descriptor == null) {
+            listener.onError(
+                "Descriptorul TX nu a fost găsit"
+            )
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
+            val result = gatt.writeDescriptor(
+                descriptor,
+                BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            )
+
+            if (result != BluetoothStatusCodes.SUCCESS) {
+                listener.onError(
+                    "Activarea notificărilor TX a eșuat"
+                )
+            }
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            descriptor.value =
+                BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+
+            @Suppress("DEPRECATION")
+            val started = gatt.writeDescriptor(descriptor)
+
+            if (!started) {
+                listener.onError(
+                    "Activarea notificărilor TX a eșuat"
+                )
+            }
+        }
+    }
+
+    private fun handleFeedback(data: ByteArray) {
+
+        if (data.isEmpty()) {
+            return
+        }
+
+        val message =
+            data.toString(Charsets.UTF_8).trim()
+
+        if (message.isNotEmpty()) {
+            listener.onFeedback(message)
+        }
     }
 
     private val gattCallback =
@@ -216,44 +308,29 @@ class BleManager(
                 status: Int,
                 newState: Int
             ) {
+
                 when (newState) {
 
                     BluetoothProfile.STATE_CONNECTED -> {
+
                         if (status == BluetoothGatt.GATT_SUCCESS) {
                             bluetoothGatt = gatt
                             gatt.discoverServices()
                         } else {
-                            rxCharacteristic = null
-
-                            if (bluetoothGatt === gatt) {
-                                bluetoothGatt = null
-                            }
-
-                            gatt.close()
+                            closeGatt(gatt)
                             listener.onDisconnected()
                         }
                     }
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
-                        rxCharacteristic = null
-
-                        if (bluetoothGatt === gatt) {
-                            bluetoothGatt = null
-                        }
-
-                        gatt.close()
+                        closeGatt(gatt)
                         listener.onDisconnected()
                     }
 
                     else -> {
+
                         if (status != BluetoothGatt.GATT_SUCCESS) {
-                            rxCharacteristic = null
-
-                            if (bluetoothGatt === gatt) {
-                                bluetoothGatt = null
-                            }
-
-                            gatt.close()
+                            closeGatt(gatt)
                             listener.onDisconnected()
                         }
                     }
@@ -283,17 +360,51 @@ class BleManager(
                     return
                 }
 
-                val characteristic =
+                val rx =
                     service.getCharacteristic(RX_UUID)
 
-                if (characteristic == null) {
+                if (rx == null) {
                     listener.onError(
                         "Caracteristica RX nu a fost găsită"
                     )
                     return
                 }
 
-                rxCharacteristic = characteristic
+                val tx =
+                    service.getCharacteristic(TX_UUID)
+
+                if (tx == null) {
+                    listener.onError(
+                        "Caracteristica TX nu a fost găsită"
+                    )
+                    return
+                }
+
+                rxCharacteristic = rx
+                txCharacteristic = tx
+
+                enableTxNotifications(
+                    gatt = gatt,
+                    characteristic = tx
+                )
+            }
+
+            override fun onDescriptorWrite(
+                gatt: BluetoothGatt,
+                descriptor: BluetoothGattDescriptor,
+                status: Int
+            ) {
+
+                if (descriptor.uuid != CCCD_UUID) {
+                    return
+                }
+
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    listener.onError(
+                        "Notificările TX nu au fost activate"
+                    )
+                    return
+                }
 
                 val name =
                     gatt.device.name ?: "ESP32"
@@ -301,27 +412,47 @@ class BleManager(
                 listener.onConnected(name)
             }
 
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic
+            ) {
+
+                @Suppress("DEPRECATION")
+                handleFeedback(characteristic.value)
+            }
+
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                value: ByteArray
+            ) {
+                handleFeedback(value)
+            }
+
             override fun onCharacteristicWrite(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic,
                 status: Int
             ) {
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    val value =
-                        @Suppress("DEPRECATION")
-                        characteristic.value
 
-                    val command =
-                        value?.firstOrNull()?.toInt()?.toChar()
-
-                    if (command != null) {
-                        listener.onCommandSent(command)
-                    }
-                } else {
+                if (status != BluetoothGatt.GATT_SUCCESS) {
                     listener.onError(
                         "Eroare la scrierea BLE: $status"
                     )
                 }
             }
         }
+
+    @SuppressLint("MissingPermission")
+    private fun closeGatt(gatt: BluetoothGatt) {
+
+        rxCharacteristic = null
+        txCharacteristic = null
+
+        if (bluetoothGatt === gatt) {
+            bluetoothGatt = null
+        }
+
+        gatt.close()
+    }
 }

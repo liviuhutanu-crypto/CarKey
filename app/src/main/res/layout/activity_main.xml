@@ -13,6 +13,14 @@
         android:scaleType="fitCenter"
         android:src="@drawable/cheie" />
 
+    <View
+        android:id="@+id/bleStatusLed"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:layout_marginStart="96dp"
+        android:layout_marginTop="196dp"
+        android:background="@drawable/bg_status_led" />
+
     <TextView
         android:id="@+id/statusText"
         android:layout_width="wrap_content"
