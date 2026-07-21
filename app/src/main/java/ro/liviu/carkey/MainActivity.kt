@@ -1,90 +1,58 @@
 package ro.liviu.carkey
 
 import android.annotation.SuppressLint
-import android.app.Dialog
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.MotionEvent
-import android.view.ViewGroup
-import android.widget.ImageView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.content.Context
 import android.view.View
+import android.widget.ImageView
+import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity(), BleManager.Listener {
+class MainActivity :
+    AppCompatActivity(),
+    BleManager.Listener,
+    KeyTouchController.Listener {
 
     private lateinit var image: ImageView
     private lateinit var bleManager: BleManager
+    private lateinit var keyTouchController: KeyTouchController
+    private lateinit var bleDeviceDialog: BleDeviceDialog
 
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    private val foundDevices = mutableListOf<BluetoothDevice>()
-    private val foundRssi = mutableListOf<Int>()
-
-    private var deviceListAdapter: BleDeviceAdapter? = null
-    private var deviceDialog: Dialog? = null
-    private var pressedButton: ButtonType? = null
 
     private var autoReconnectEnabled = true
     private var isConnected = false
 
+    private val stopAutoConnectScanRunnable = Runnable {
+        bleManager.stopScan()
+    }
+
     private val autoReconnectRunnable = object : Runnable {
+
         override fun run() {
+
             if (autoReconnectEnabled && !isConnected) {
                 autoConnect()
             }
 
-            mainHandler.postDelayed(this, 20_000L)
+            mainHandler.postDelayed(
+                this,
+                20_000L
+            )
         }
     }
 
-    private val stopScanRunnable = Runnable {
-        bleManager.stopScan()
-    }
-
-    private val buttons = listOf(
-        KeyButton(
-            type = ButtonType.BLE,
-            left = 0.250f,
-            top = 0.090f,
-            right = 0.420f,
-            bottom = 0.180f
-        ),
-        KeyButton(
-            type = ButtonType.UNLOCK,
-            left = 0.395f,
-            top = 0.300f,
-            right = 0.630f,
-            bottom = 0.455f
-        ),
-        KeyButton(
-            type = ButtonType.LOCK,
-            left = 0.435f,
-            top = 0.495f,
-            right = 0.675f,
-            bottom = 0.650f
-        ),
-        KeyButton(
-            type = ButtonType.TRUNK,
-            left = 0.470f,
-            top = 0.690f,
-            right = 0.730f,
-            bottom = 0.820f
-        )
-    )
-
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -95,172 +63,68 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             listener = this
         )
 
-        mainHandler.post(autoReconnectRunnable)
+        keyTouchController = KeyTouchController(
+            image = image,
+            listener = this
+        )
+
+        bleDeviceDialog = BleDeviceDialog(
+            activity = this,
+            bleManager = bleManager,
+            mainHandler = mainHandler
+        )
+
+        image.setOnTouchListener { _, event ->
+            keyTouchController.handleTouch(event)
+            true
+        }
+
+        setBleLedColor("#808080")
 
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
-        }
-
-        image.setOnTouchListener { _, event ->
-            handleTouch(event)
-            true
+        } else {
+            mainHandler.post(autoReconnectRunnable)
         }
     }
 
-    private fun handleTouch(event: MotionEvent) {
+    /*
+     * Evenimente primite de la KeyTouchController.
+     */
 
-        val imagePoint = convertTouchToImageCoordinates(
-            touchX = event.x,
-            touchY = event.y
-        ) ?: return
-
-        val normalizedX = imagePoint.first
-        val normalizedY = imagePoint.second
-
-        when (event.actionMasked) {
-
-            MotionEvent.ACTION_DOWN -> {
-
-                pressedButton = findButton(
-                    x = normalizedX,
-                    y = normalizedY
-                )
-
-                when (pressedButton) {
-                    ButtonType.UNLOCK -> bleManager.send('D')
-                    ButtonType.LOCK -> bleManager.send('I')
-                    ButtonType.TRUNK -> bleManager.send('P')
-                    ButtonType.BLE,
-                    null -> Unit
-                }
-            }
-
-            MotionEvent.ACTION_UP -> {
-
-                when (pressedButton) {
-                    ButtonType.UNLOCK -> bleManager.send('d')
-                    ButtonType.LOCK -> bleManager.send('i')
-                    ButtonType.BLE -> openBleDeviceList()
-                    ButtonType.TRUNK,
-                    null -> Unit
-                }
-
-                pressedButton = null
-            }
-
-            MotionEvent.ACTION_CANCEL -> {
-                pressedButton = null
-            }
-        }
+    override fun onUnlockPressed() {
+        bleManager.send('D')
     }
 
-    private fun openBleDeviceList() {
+    override fun onUnlockReleased() {
+        bleManager.send('d')
+    }
+
+    override fun onLockPressed() {
+        bleManager.send('I')
+    }
+
+    override fun onLockReleased() {
+        bleManager.send('i')
+    }
+
+    override fun onTrunkPressed() {
+        bleManager.send('P')
+    }
+
+    override fun onBlePressed() {
 
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
             return
         }
 
-        foundDevices.clear()
-        foundRssi.clear()
-
-        deviceDialog?.dismiss()
-
-        val dialog = Dialog(this)
-        dialog.setContentView(R.layout.dialog_ble)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-
-        val recyclerDevices =
-            dialog.findViewById<RecyclerView>(R.id.recyclerDevices)
-
-        deviceListAdapter = BleDeviceAdapter(
-            devices = foundDevices,
-            rssiValues = foundRssi
-        ) { selectedDevice ->
-
-            mainHandler.removeCallbacks(stopScanRunnable)
-            bleManager.stopScan()
-
-            getSharedPreferences("CarKey", MODE_PRIVATE)
-                .edit()
-                .putString("last_device", selectedDevice.address)
-                .apply()
-
-            dialog.dismiss()
-            bleManager.connect(selectedDevice)
-        }
-
-        recyclerDevices.layoutManager = LinearLayoutManager(this)
-        recyclerDevices.adapter = deviceListAdapter
-
-        dialog.setOnDismissListener {
-
-            mainHandler.removeCallbacks(stopScanRunnable)
-            bleManager.stopScan()
-
-            deviceDialog = null
-            deviceListAdapter = null
-        }
-
-        dialog.show()
-
-        dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.70f).toInt(),
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-
-        deviceDialog = dialog
-
-        bleManager.startScan()
-
-        mainHandler.removeCallbacks(stopScanRunnable)
-        mainHandler.postDelayed(stopScanRunnable, 10_000L)
-    }
-    private fun convertTouchToImageCoordinates(
-        touchX: Float,
-        touchY: Float
-    ): Pair<Float, Float>? {
-
-        val drawable = image.drawable ?: return null
-        val inverseMatrix = Matrix()
-
-        if (!image.imageMatrix.invert(inverseMatrix)) {
-            return null
-        }
-
-        val points = floatArrayOf(touchX, touchY)
-        inverseMatrix.mapPoints(points)
-
-        val drawableWidth = drawable.intrinsicWidth.toFloat()
-        val drawableHeight = drawable.intrinsicHeight.toFloat()
-
-        if (drawableWidth <= 0f || drawableHeight <= 0f) {
-            return null
-        }
-
-        val normalizedX = points[0] / drawableWidth
-        val normalizedY = points[1] / drawableHeight
-
-        if (
-            normalizedX !in 0f..1f ||
-            normalizedY !in 0f..1f
-        ) {
-            return null
-        }
-
-        return normalizedX to normalizedY
+        bleDeviceDialog.show()
     }
 
-    private fun findButton(
-        x: Float,
-        y: Float
-    ): ButtonType? {
-
-        return buttons.firstOrNull { button ->
-            x in button.left..button.right &&
-                    y in button.top..button.bottom
-        }?.type
-    }
+    /*
+     * Evenimente primite de la BleManager.
+     */
 
     @SuppressLint("MissingPermission")
     override fun onDeviceFound(
@@ -274,67 +138,74 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             val lastAddress = getSharedPreferences(
                 "CarKey",
                 MODE_PRIVATE
-            ).getString("last_device", null)
+            ).getString(
+                "last_device",
+                null
+            )
 
-            if (device.address == lastAddress && !isConnected) {
-                mainHandler.removeCallbacks(stopScanRunnable)
+            if (
+                lastAddress != null &&
+                device.address == lastAddress &&
+                !isConnected
+            ) {
+
+                mainHandler.removeCallbacks(
+                    stopAutoConnectScanRunnable
+                )
+
                 bleManager.stopScan()
                 bleManager.connect(device)
+
                 return@runOnUiThread
             }
 
-            val alreadyExists = foundDevices.any {
-                it.address == device.address
-            }
-
-            if (alreadyExists) {
-                return@runOnUiThread
-            }
-
-            foundDevices.add(device)
-            foundRssi.add(rssi)
-            deviceListAdapter?.notifyItemInserted(foundDevices.lastIndex)
+            bleDeviceDialog.addDevice(
+                device = device,
+                rssi = rssi
+            )
         }
     }
 
     override fun onScanStarted() {
-        setBleLedColor("#2196F3") // albastru
+        if (!isConnected) {
+            setBleLedColor("#2196F3")
+        }
     }
 
-    override fun onScanStopped() = Unit
+    override fun onScanStopped() {
+        if (isConnected) {
+            setBleLedColor("#4CAF50")
+        } else {
+            setBleLedColor("#808080")
+        }
+    }
 
     override fun onConnecting(name: String) {
         setBleLedColor("#FFC107")
     }
 
     override fun onConnected(name: String) {
-        setBleLedColor("#4CAF50")
+
         isConnected = true
+
+        mainHandler.removeCallbacks(
+            stopAutoConnectScanRunnable
+        )
+
+        setBleLedColor("#4CAF50")
     }
 
     override fun onDisconnected() {
-
-        setBleLedColor("#808080") // gri
-
         isConnected = false
+        setBleLedColor("#808080")
 
-        mainHandler.removeCallbacks(autoReconnectRunnable)
-        mainHandler.postDelayed(
-            autoReconnectRunnable,
-            2_000L
+        scheduleReconnect(
+            delayMillis = 2_000L
         )
     }
 
-
     override fun onError(message: String) {
-
-        isConnected = false
-
-        mainHandler.removeCallbacks(autoReconnectRunnable)
-        mainHandler.postDelayed(
-            autoReconnectRunnable,
-            2_000L
-        )
+        Unit
     }
 
     override fun onFeedback(message: String) {
@@ -345,12 +216,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
                 "OK:D",
                 "OK:I",
-                "OK:P" -> {
-                    vibrateSuccess()
-                }
+                "OK:P" -> vibrateSuccess()
             }
         }
     }
+
+    /*
+     * Permisiuni Bluetooth.
+     */
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -364,33 +237,131 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             grantResults
         )
 
-        if (requestCode != BluetoothPermissions.REQUEST_CODE) {
+        if (
+            requestCode !=
+            BluetoothPermissions.REQUEST_CODE
+        ) {
             return
         }
 
         val granted =
             grantResults.isNotEmpty() &&
-                    grantResults.all {
-                        it == PackageManager.PERMISSION_GRANTED
+                    grantResults.all { result ->
+                        result ==
+                                PackageManager.PERMISSION_GRANTED
                     }
 
         if (!granted) {
             return
         }
+
+        mainHandler.removeCallbacks(
+            autoReconnectRunnable
+        )
+
+        mainHandler.post(
+            autoReconnectRunnable
+        )
     }
+
+    /*
+     * Reconectare automată.
+     */
+
+    private fun autoConnect() {
+
+        if (isConnected) {
+            return
+        }
+
+        if (!BluetoothPermissions.hasPermissions(this)) {
+            return
+        }
+
+        val lastAddress = getSharedPreferences(
+            "CarKey",
+            MODE_PRIVATE
+        ).getString(
+            "last_device",
+            null
+        )
+
+        if (lastAddress == null) {
+            return
+        }
+
+        bleManager.startScan()
+
+        mainHandler.removeCallbacks(
+            stopAutoConnectScanRunnable
+        )
+
+        mainHandler.postDelayed(
+            stopAutoConnectScanRunnable,
+            10_000L
+        )
+    }
+
+    private fun scheduleReconnect(
+        delayMillis: Long
+    ) {
+
+        if (!autoReconnectEnabled) {
+            return
+        }
+
+        mainHandler.removeCallbacks(
+            autoReconnectRunnable
+        )
+
+        mainHandler.postDelayed(
+            autoReconnectRunnable,
+            delayMillis
+        )
+    }
+
+    /*
+     * Indicatorul BLE.
+     */
+
+    private fun setBleLedColor(
+        color: String
+    ) {
+
+        runOnUiThread {
+
+            val bleStatusLed =
+                findViewById<View>(
+                    R.id.bleStatusLed
+                )
+
+            bleStatusLed.backgroundTintList =
+                ColorStateList.valueOf(
+                    Color.parseColor(color)
+                )
+        }
+    }
+
+    /*
+     * Confirmarea comenzilor.
+     */
 
     private fun vibrateSuccess() {
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.S
+        ) {
 
             val vibratorManager =
-                getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
-                        as VibratorManager
+                getSystemService(
+                    Context.VIBRATOR_MANAGER_SERVICE
+                ) as VibratorManager
 
             vibratorManager.defaultVibrator.vibrate(
                 VibrationEffect.createOneShot(
-                    30,
-                    VibrationEffect.DEFAULT_AMPLITUDE
+                    50L,
+                    200
                 )
             )
 
@@ -398,55 +369,30 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
             @Suppress("DEPRECATION")
             val vibrator =
-                getSystemService(Context.VIBRATOR_SERVICE)
-                        as Vibrator
+                getSystemService(
+                    Context.VIBRATOR_SERVICE
+                ) as Vibrator
 
             @Suppress("DEPRECATION")
-            vibrator.vibrate(30)
+            vibrator.vibrate(30L)
         }
     }
-
-    private fun setBleLedColor(color: String) {
-        runOnUiThread {
-            findViewById<View>(R.id.bleStatusLed)
-                .backgroundTintList =
-                android.content.res.ColorStateList.valueOf(
-                    Color.parseColor(color)
-                )
-        }
-    }
-
 
     override fun onDestroy() {
 
-        mainHandler.removeCallbacks(autoReconnectRunnable)
-        mainHandler.removeCallbacks(stopScanRunnable)
+        autoReconnectEnabled = false
 
-        deviceDialog?.dismiss()
-        deviceDialog = null
+        mainHandler.removeCallbacks(
+            autoReconnectRunnable
+        )
 
+        mainHandler.removeCallbacks(
+            stopAutoConnectScanRunnable
+        )
+
+        bleDeviceDialog.dismiss()
         bleManager.disconnect()
 
         super.onDestroy()
-    }
-
-
-    private fun autoConnect() {
-
-        if (!BluetoothPermissions.hasPermissions(this))
-            return
-
-        val address = getSharedPreferences(
-            "CarKey",
-            MODE_PRIVATE
-        ).getString("last_device", null) ?: return
-
-        bleManager.startScan()
-
-        mainHandler.postDelayed({
-
-            bleManager.stopScan()
-
-        }, 10_000)
     }
 }
