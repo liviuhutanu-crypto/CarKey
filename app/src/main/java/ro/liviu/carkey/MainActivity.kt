@@ -113,12 +113,7 @@ class MainActivity :
     }
 
     override fun onBlePressed() {
-
-        if (!BluetoothPermissions.hasPermissions(this)) {
-            BluetoothPermissions.request(this)
-            return
-        }
-
+        VibrationResponse.button(this@MainActivity)
         bleDeviceDialog.show()
     }
 
@@ -193,6 +188,7 @@ class MainActivity :
         )
 
         setBleLedColor("#4CAF50")
+        VibrationResponse.connected(this@MainActivity)
     }
 
     override fun onDisconnected() {
