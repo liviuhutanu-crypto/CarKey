@@ -58,10 +58,8 @@ class MainActivity :
         setContentView(R.layout.activity_main)
 
         image = findViewById(R.id.keyImage)
-        bleStatusLed = findViewById(R.id.bleStatusLed)
-        bleStatusLed.setOnClickListener {
-            onBlePressed()
-        }
+
+
 
         bleManager = BleManager(
             context = this,
@@ -79,10 +77,17 @@ class MainActivity :
             mainHandler = mainHandler
         )
 
+        bleStatusLed = findViewById(R.id.bleStatusLed)
+
         image.setOnTouchListener { _, event ->
             keyTouchController.handleTouch(event)
             true
         }
+
+        bleStatusLed.setOnClickListener {
+            handleBlePressed()
+        }
+
 
         setBleLedColor("#666666")
 
@@ -117,7 +122,7 @@ class MainActivity :
         bleManager.send('P')
     }
 
-    override fun onBlePressed() {
+    private fun handleBlePressed() {
         VibrationResponse.button(this@MainActivity)
         bleDeviceDialog.show()
     }
@@ -208,7 +213,17 @@ class MainActivity :
     }
 
     override fun onError(message: String) {
-        setBleLedColor("#D32F2F")
+
+        android.util.Log.e(
+            "CarKeyBLE",
+            message
+        )
+
+        if (isConnected) {
+            setBleLedColor("#2196F3")
+        } else {
+            setBleLedColor("#666666")
+        }
     }
 
     override fun onFeedback(message: String) {
@@ -349,13 +364,13 @@ class MainActivity :
              * astfel încât reflexiile și textura metalică să nu dispară.
              */
             val redStrength =
-                0.25f + red * 0.90f
+                0.25f + red * 0.94f
 
             val greenStrength =
-                0.25f + green * 0.90f
+                0.25f + green * 0.94f
 
             val blueStrength =
-                0.25f + blue * 0.90f
+                0.25f + blue * 0.94f
 
             val colorMatrix = ColorMatrix(
                 floatArrayOf(

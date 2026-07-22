@@ -12,22 +12,16 @@ class KeyTouchController(
     interface Listener {
         fun onUnlockPressed()
         fun onUnlockReleased()
+
         fun onLockPressed()
         fun onLockReleased()
+
         fun onTrunkPressed()
-        fun onBlePressed()
     }
 
     private var pressedButton: ButtonType? = null
 
     private val buttons = listOf(
-        KeyButton(
-            type = ButtonType.BLE,
-            left = 0.250f,
-            top = 0.090f,
-            right = 0.420f,
-            bottom = 0.180f
-        ),
         KeyButton(
             type = ButtonType.UNLOCK,
             left = 0.395f,
@@ -53,49 +47,74 @@ class KeyTouchController(
 
     fun handleTouch(event: MotionEvent) {
 
-        val imagePoint = convertTouchToImageCoordinates(
-            touchX = event.x,
-            touchY = event.y
-        ) ?: return
-
-        val normalizedX = imagePoint.first
-        val normalizedY = imagePoint.second
-
         when (event.actionMasked) {
 
             MotionEvent.ACTION_DOWN -> {
-
-                pressedButton = findButton(
-                    x = normalizedX,
-                    y = normalizedY
+                handleActionDown(
+                    touchX = event.x,
+                    touchY = event.y
                 )
-
-                when (pressedButton) {
-                    ButtonType.UNLOCK -> listener.onUnlockPressed()
-                    ButtonType.LOCK -> listener.onLockPressed()
-                    ButtonType.TRUNK -> listener.onTrunkPressed()
-                    ButtonType.BLE,
-                    null -> Unit
-                }
             }
 
-            MotionEvent.ACTION_UP -> {
-
-                when (pressedButton) {
-                    ButtonType.UNLOCK -> listener.onUnlockReleased()
-                    ButtonType.LOCK -> listener.onLockReleased()
-                    ButtonType.BLE -> listener.onBlePressed()
-                    ButtonType.TRUNK,
-                    null -> Unit
-                }
-
-                pressedButton = null
-            }
-
+            MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
-                pressedButton = null
+                releasePressedButton()
             }
         }
+    }
+
+    private fun handleActionDown(
+        touchX: Float,
+        touchY: Float
+    ) {
+
+        val imagePoint =
+            convertTouchToImageCoordinates(
+                touchX = touchX,
+                touchY = touchY
+            ) ?: return
+
+        pressedButton =
+            findButton(
+                x = imagePoint.first,
+                y = imagePoint.second
+            )
+
+        when (pressedButton) {
+
+            ButtonType.UNLOCK -> {
+                listener.onUnlockPressed()
+            }
+
+            ButtonType.LOCK -> {
+                listener.onLockPressed()
+            }
+
+            ButtonType.TRUNK -> {
+                listener.onTrunkPressed()
+            }
+
+            null -> Unit
+        }
+    }
+
+    private fun releasePressedButton() {
+
+        when (pressedButton) {
+
+            ButtonType.UNLOCK -> {
+                listener.onUnlockReleased()
+            }
+
+            ButtonType.LOCK -> {
+                listener.onLockReleased()
+            }
+
+            ButtonType.TRUNK,
+            null -> Unit
+        }
+
+        pressedButton = null
     }
 
     private fun convertTouchToImageCoordinates(
@@ -103,25 +122,41 @@ class KeyTouchController(
         touchY: Float
     ): Pair<Float, Float>? {
 
-        val drawable = image.drawable ?: return null
+        val drawable =
+            image.drawable ?: return null
+
+        val drawableWidth =
+            drawable.intrinsicWidth.toFloat()
+
+        val drawableHeight =
+            drawable.intrinsicHeight.toFloat()
+
+        if (
+            drawableWidth <= 0f ||
+            drawableHeight <= 0f
+        ) {
+            return null
+        }
+
         val inverseMatrix = Matrix()
 
         if (!image.imageMatrix.invert(inverseMatrix)) {
             return null
         }
 
-        val points = floatArrayOf(touchX, touchY)
+        val points =
+            floatArrayOf(
+                touchX,
+                touchY
+            )
+
         inverseMatrix.mapPoints(points)
 
-        val drawableWidth = drawable.intrinsicWidth.toFloat()
-        val drawableHeight = drawable.intrinsicHeight.toFloat()
+        val normalizedX =
+            points[0] / drawableWidth
 
-        if (drawableWidth <= 0f || drawableHeight <= 0f) {
-            return null
-        }
-
-        val normalizedX = points[0] / drawableWidth
-        val normalizedY = points[1] / drawableHeight
+        val normalizedY =
+            points[1] / drawableHeight
 
         if (
             normalizedX !in 0f..1f ||
@@ -138,9 +173,12 @@ class KeyTouchController(
         y: Float
     ): ButtonType? {
 
-        return buttons.firstOrNull { button ->
-            x in button.left..button.right &&
-                    y in button.top..button.bottom
-        }?.type
+        return buttons
+            .firstOrNull { button ->
+
+                x in button.left..button.right &&
+                        y in button.top..button.bottom
+            }
+            ?.type
     }
 }

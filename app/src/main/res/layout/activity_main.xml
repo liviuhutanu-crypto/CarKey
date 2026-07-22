@@ -10,6 +10,7 @@
         android:id="@+id/keyImage"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:contentDescription="@null"
         android:scaleType="fitCenter"
         android:src="@drawable/cheie" />
 
@@ -19,9 +20,12 @@
         android:layout_height="72dp"
         android:layout_marginStart="85dp"
         android:layout_marginTop="185dp"
+        android:adjustViewBounds="true"
+        android:clickable="true"
+        android:contentDescription="Bluetooth"
+        android:focusable="true"
         android:scaleType="fitCenter"
         android:src="@drawable/ble" />
-        android:adjustViewBounds="true"
 
     <ImageView
         android:id="@+id/lockIcon"
@@ -29,9 +33,10 @@
         android:layout_height="80dp"
         android:layout_marginStart="140dp"
         android:layout_marginTop="385dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="fitCenter"
         android:src="@drawable/lock" />
-        android:adjustViewBounds="true"
 
     <ImageView
         android:id="@+id/unlockIcon"
@@ -39,9 +44,10 @@
         android:layout_height="80dp"
         android:layout_marginStart="138dp"
         android:layout_marginTop="286dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="fitCenter"
         android:src="@drawable/unlock" />
-        android:adjustViewBounds="true"
 
     <ImageView
         android:id="@+id/trunkIcon"
@@ -49,9 +55,10 @@
         android:layout_height="80dp"
         android:layout_marginStart="140dp"
         android:layout_marginTop="475dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="fitCenter"
         android:src="@drawable/trunk" />
-        android:adjustViewBounds="true"
 
     <TextView
         android:id="@+id/statusText"
@@ -59,8 +66,8 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="40dp"
-        android:text="Aștept apăsare..."
+        android:text="LLH"
         android:textColor="#FFFFFF"
-        android:textSize="24sp"/>
+        android:textSize="24sp" />
 
 </FrameLayout>
