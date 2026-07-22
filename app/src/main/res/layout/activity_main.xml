@@ -13,13 +13,45 @@
         android:scaleType="fitCenter"
         android:src="@drawable/cheie" />
 
-    <View
+    <ImageView
         android:id="@+id/bleStatusLed"
-        android:layout_width="46dp"
-        android:layout_height="46dp"
-        android:layout_marginStart="96dp"
-        android:layout_marginTop="196dp"
-        android:background="@drawable/bg_status_led" />
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginStart="85dp"
+        android:layout_marginTop="185dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ble" />
+        android:adjustViewBounds="true"
+
+    <ImageView
+        android:id="@+id/lockIcon"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginStart="140dp"
+        android:layout_marginTop="385dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/lock" />
+        android:adjustViewBounds="true"
+
+    <ImageView
+        android:id="@+id/unlockIcon"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginStart="138dp"
+        android:layout_marginTop="286dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/unlock" />
+        android:adjustViewBounds="true"
+
+    <ImageView
+        android:id="@+id/trunkIcon"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginStart="140dp"
+        android:layout_marginTop="475dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/trunk" />
+        android:adjustViewBounds="true"
 
     <TextView
         android:id="@+id/statusText"

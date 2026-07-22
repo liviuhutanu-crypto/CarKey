@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -13,9 +12,10 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.view.View
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 
 class MainActivity :
     AppCompatActivity(),
@@ -23,6 +23,7 @@ class MainActivity :
     KeyTouchController.Listener {
 
     private lateinit var image: ImageView
+    private lateinit var bleStatusLed: ImageView
     private lateinit var bleManager: BleManager
     private lateinit var keyTouchController: KeyTouchController
     private lateinit var bleDeviceDialog: BleDeviceDialog
@@ -57,6 +58,10 @@ class MainActivity :
         setContentView(R.layout.activity_main)
 
         image = findViewById(R.id.keyImage)
+        bleStatusLed = findViewById(R.id.bleStatusLed)
+        bleStatusLed.setOnClickListener {
+            onBlePressed()
+        }
 
         bleManager = BleManager(
             context = this,
@@ -79,7 +84,7 @@ class MainActivity :
             true
         }
 
-        setBleLedColor("#808080")
+        setBleLedColor("#666666")
 
         if (!BluetoothPermissions.hasPermissions(this)) {
             BluetoothPermissions.request(this)
@@ -162,16 +167,18 @@ class MainActivity :
     }
 
     override fun onScanStarted() {
+
         if (!isConnected) {
             setBleLedColor("#2196F3")
         }
     }
 
     override fun onScanStopped() {
+
         if (isConnected) {
-            setBleLedColor("#4CAF50")
+            setBleLedColor("#2196F3")
         } else {
-            setBleLedColor("#808080")
+            setBleLedColor("#666666")
         }
     }
 
@@ -187,13 +194,13 @@ class MainActivity :
             stopAutoConnectScanRunnable
         )
 
-        setBleLedColor("#4CAF50")
+        setBleLedColor("#2196F3")
         VibrationResponse.connected(this@MainActivity)
     }
 
     override fun onDisconnected() {
         isConnected = false
-        setBleLedColor("#808080")
+        setBleLedColor("#666666")
 
         scheduleReconnect(
             delayMillis = 2_000L
@@ -201,7 +208,7 @@ class MainActivity :
     }
 
     override fun onError(message: String) {
-        Unit
+        setBleLedColor("#D32F2F")
     }
 
     override fun onFeedback(message: String) {
@@ -326,15 +333,60 @@ class MainActivity :
 
         runOnUiThread {
 
-            val bleStatusLed =
-                findViewById<View>(
-                    R.id.bleStatusLed
-                )
+            val targetColor = Color.parseColor(color)
 
-            bleStatusLed.backgroundTintList =
-                ColorStateList.valueOf(
-                    Color.parseColor(color)
+            val red =
+                Color.red(targetColor) / 255f
+
+            val green =
+                Color.green(targetColor) / 255f
+
+            val blue =
+                Color.blue(targetColor) / 255f
+
+            /*
+             * O parte din luminozitatea originală este păstrată,
+             * astfel încât reflexiile și textura metalică să nu dispară.
+             */
+            val redStrength =
+                0.25f + red * 0.90f
+
+            val greenStrength =
+                0.25f + green * 0.90f
+
+            val blueStrength =
+                0.25f + blue * 0.90f
+
+            val colorMatrix = ColorMatrix(
+                floatArrayOf(
+                    0.2126f * redStrength,
+                    0.7152f * redStrength,
+                    0.0722f * redStrength,
+                    0f,
+                    0f,
+
+                    0.2126f * greenStrength,
+                    0.7152f * greenStrength,
+                    0.0722f * greenStrength,
+                    0f,
+                    0f,
+
+                    0.2126f * blueStrength,
+                    0.7152f * blueStrength,
+                    0.0722f * blueStrength,
+                    0f,
+                    0f,
+
+                    0f,
+                    0f,
+                    0f,
+                    1f,
+                    0f
                 )
+            )
+
+            bleStatusLed.colorFilter =
+                ColorMatrixColorFilter(colorMatrix)
         }
     }
 
