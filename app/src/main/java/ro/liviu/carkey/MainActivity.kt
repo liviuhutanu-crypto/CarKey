@@ -5,6 +5,8 @@ import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -12,118 +14,261 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.MotionEvent
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 
 class MainActivity :
     AppCompatActivity(),
-    BleManager.Listener,
-    KeyTouchController.Listener {
+    BleManager.Listener {
 
-    private lateinit var image: ImageView
     private lateinit var bleStatusLed: ImageView
+    private lateinit var lockIcon: ImageView
+    private lateinit var unlockIcon: ImageView
+    private lateinit var trunkIcon: ImageView
+
     private lateinit var bleManager: BleManager
-    private lateinit var keyTouchController: KeyTouchController
     private lateinit var bleDeviceDialog: BleDeviceDialog
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainHandler =
+        Handler(Looper.getMainLooper())
 
     private var autoReconnectEnabled = true
     private var isConnected = false
 
-    private val stopAutoConnectScanRunnable = Runnable {
-        bleManager.stopScan()
-    }
-
-    private val autoReconnectRunnable = object : Runnable {
-
-        override fun run() {
-
-            if (autoReconnectEnabled && !isConnected) {
-                autoConnect()
-            }
-
-            mainHandler.postDelayed(
-                this,
-                20_000L
-            )
+    private val stopAutoConnectScanRunnable =
+        Runnable {
+            bleManager.stopScan()
         }
-    }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    private val autoReconnectRunnable =
+        object : Runnable {
+
+            override fun run() {
+
+                if (
+                    autoReconnectEnabled &&
+                    !isConnected
+                ) {
+                    autoConnect()
+                }
+
+                mainHandler.postDelayed(
+                    this,
+                    20_000L
+                )
+            }
+        }
+
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
 
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        image = findViewById(R.id.keyImage)
-
-
-
-        bleManager = BleManager(
-            context = this,
-            listener = this
+        setContentView(
+            R.layout.activity_main
         )
 
-        keyTouchController = KeyTouchController(
-            image = image,
-            listener = this
-        )
+        bleStatusLed =
+            findViewById(R.id.bleStatusLed)
 
-        bleDeviceDialog = BleDeviceDialog(
-            activity = this,
-            bleManager = bleManager,
-            mainHandler = mainHandler
-        )
+        lockIcon =
+            findViewById(R.id.lockIcon)
 
-        bleStatusLed = findViewById(R.id.bleStatusLed)
+        unlockIcon =
+            findViewById(R.id.unlockIcon)
 
-        image.setOnTouchListener { _, event ->
-            keyTouchController.handleTouch(event)
-            true
-        }
+        trunkIcon =
+            findViewById(R.id.trunkIcon)
+
+        bleManager =
+            BleManager(
+                context = this,
+                listener = this
+            )
+
+        bleDeviceDialog =
+            BleDeviceDialog(
+                activity = this,
+                bleManager = bleManager,
+                mainHandler = mainHandler
+            )
+
+        configureKeyButtons()
 
         bleStatusLed.setOnClickListener {
             handleBlePressed()
         }
 
-
         setBleLedColor("#666666")
 
-        if (!BluetoothPermissions.hasPermissions(this)) {
+        if (
+            !BluetoothPermissions
+                .hasPermissions(this)
+        ) {
+
             BluetoothPermissions.request(this)
+
         } else {
-            mainHandler.post(autoReconnectRunnable)
+
+            mainHandler.post(
+                autoReconnectRunnable
+            )
         }
     }
 
     /*
-     * Evenimente primite de la KeyTouchController.
+     * Configurarea butoanelor telecomenzii.
      */
 
-    override fun onUnlockPressed() {
-        bleManager.send('D')
+    private fun configureKeyButtons() {
+
+        configureMomentaryButton(
+            imageView = unlockIcon,
+            pressCommand = 'D',
+            releaseCommand = 'd'
+        )
+
+        configureMomentaryButton(
+            imageView = lockIcon,
+            pressCommand = 'I',
+            releaseCommand = 'i'
+        )
+
+        configureTrunkButton()
     }
 
-    override fun onUnlockReleased() {
-        bleManager.send('d')
+    /*
+     * Buton momentan:
+     *
+     * trimite litera mare la apăsare;
+     * trimite litera mică la ridicare sau anulare.
+     *
+     * Variabila pressed aparține separat fiecărui
+     * ImageView configurat.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun configureMomentaryButton(
+        imageView: ImageView,
+        pressCommand: Char,
+        releaseCommand: Char
+    ) {
+
+        var pressed = false
+
+        imageView.setOnTouchListener { view, event ->
+
+            when (event.actionMasked) {
+
+                MotionEvent.ACTION_DOWN -> {
+
+                    if (!pressed) {
+
+                        pressed = true
+                        view.isPressed = true
+
+                        bleManager.send(
+                            pressCommand
+                        )
+                    }
+
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+
+                    view.isPressed = false
+
+                    if (pressed) {
+
+                        pressed = false
+
+                        bleManager.send(
+                            releaseCommand
+                        )
+                    }
+
+                    view.performClick()
+
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+
+                    view.isPressed = false
+
+                    if (pressed) {
+
+                        pressed = false
+
+                        bleManager.send(
+                            releaseCommand
+                        )
+                    }
+
+                    true
+                }
+
+                else -> true
+            }
+        }
     }
 
-    override fun onLockPressed() {
-        bleManager.send('I')
-    }
+    /*
+     * Portbagajul trimite numai P la apăsare.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun configureTrunkButton() {
 
-    override fun onLockReleased() {
-        bleManager.send('i')
-    }
+        var pressed = false
 
-    override fun onTrunkPressed() {
-        bleManager.send('P')
+        trunkIcon.setOnTouchListener { view, event ->
+
+            when (event.actionMasked) {
+
+                MotionEvent.ACTION_DOWN -> {
+
+                    if (!pressed) {
+
+                        pressed = true
+                        view.isPressed = true
+
+                        bleManager.send('P')
+                    }
+
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+
+                    pressed = false
+                    view.isPressed = false
+
+                    view.performClick()
+
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+
+                    pressed = false
+                    view.isPressed = false
+
+                    true
+                }
+
+                else -> true
+            }
+        }
     }
 
     private fun handleBlePressed() {
-        VibrationResponse.button(this@MainActivity)
+
+        VibrationResponse.button(
+            this@MainActivity
+        )
+
         bleDeviceDialog.show()
     }
 
@@ -140,13 +285,14 @@ class MainActivity :
 
         runOnUiThread {
 
-            val lastAddress = getSharedPreferences(
-                "CarKey",
-                MODE_PRIVATE
-            ).getString(
-                "last_device",
-                null
-            )
+            val lastAddress =
+                getSharedPreferences(
+                    "CarKey",
+                    MODE_PRIVATE
+                ).getString(
+                    "last_device",
+                    null
+                )
 
             if (
                 lastAddress != null &&
@@ -181,17 +327,25 @@ class MainActivity :
     override fun onScanStopped() {
 
         if (isConnected) {
+
             setBleLedColor("#2196F3")
+
         } else {
+
             setBleLedColor("#666666")
         }
     }
 
-    override fun onConnecting(name: String) {
+    override fun onConnecting(
+        name: String
+    ) {
+
         setBleLedColor("#FFC107")
     }
 
-    override fun onConnected(name: String) {
+    override fun onConnected(
+        name: String
+    ) {
 
         isConnected = true
 
@@ -200,11 +354,16 @@ class MainActivity :
         )
 
         setBleLedColor("#2196F3")
-        VibrationResponse.connected(this@MainActivity)
+
+        VibrationResponse.connected(
+            this@MainActivity
+        )
     }
 
     override fun onDisconnected() {
+
         isConnected = false
+
         setBleLedColor("#666666")
 
         scheduleReconnect(
@@ -212,7 +371,9 @@ class MainActivity :
         )
     }
 
-    override fun onError(message: String) {
+    override fun onError(
+        message: String
+    ) {
 
         android.util.Log.e(
             "CarKeyBLE",
@@ -220,13 +381,18 @@ class MainActivity :
         )
 
         if (isConnected) {
+
             setBleLedColor("#2196F3")
+
         } else {
+
             setBleLedColor("#666666")
         }
     }
 
-    override fun onFeedback(message: String) {
+    override fun onFeedback(
+        message: String
+    ) {
 
         runOnUiThread {
 
@@ -234,7 +400,9 @@ class MainActivity :
 
                 "OK:D",
                 "OK:I",
-                "OK:P" -> vibrateSuccess()
+                "OK:P" -> {
+                    vibrateSuccess()
+                }
             }
         }
     }
@@ -265,8 +433,10 @@ class MainActivity :
         val granted =
             grantResults.isNotEmpty() &&
                     grantResults.all { result ->
+
                         result ==
-                                PackageManager.PERMISSION_GRANTED
+                                PackageManager
+                                    .PERMISSION_GRANTED
                     }
 
         if (!granted) {
@@ -292,17 +462,21 @@ class MainActivity :
             return
         }
 
-        if (!BluetoothPermissions.hasPermissions(this)) {
+        if (
+            !BluetoothPermissions
+                .hasPermissions(this)
+        ) {
             return
         }
 
-        val lastAddress = getSharedPreferences(
-            "CarKey",
-            MODE_PRIVATE
-        ).getString(
-            "last_device",
-            null
-        )
+        val lastAddress =
+            getSharedPreferences(
+                "CarKey",
+                MODE_PRIVATE
+            ).getString(
+                "last_device",
+                null
+            )
 
         if (lastAddress == null) {
             return
@@ -348,20 +522,24 @@ class MainActivity :
 
         runOnUiThread {
 
-            val targetColor = Color.parseColor(color)
+            val targetColor =
+                Color.parseColor(color)
 
             val red =
-                Color.red(targetColor) / 255f
+                Color.red(targetColor) /
+                        255f
 
             val green =
-                Color.green(targetColor) / 255f
+                Color.green(targetColor) /
+                        255f
 
             val blue =
-                Color.blue(targetColor) / 255f
+                Color.blue(targetColor) /
+                        255f
 
             /*
-             * O parte din luminozitatea originală este păstrată,
-             * astfel încât reflexiile și textura metalică să nu dispară.
+             * Păstrăm o parte din luminozitatea
+             * și textura imaginii originale.
              */
             val redStrength =
                 0.25f + red * 0.94f
@@ -372,36 +550,39 @@ class MainActivity :
             val blueStrength =
                 0.25f + blue * 0.94f
 
-            val colorMatrix = ColorMatrix(
-                floatArrayOf(
-                    0.2126f * redStrength,
-                    0.7152f * redStrength,
-                    0.0722f * redStrength,
-                    0f,
-                    0f,
+            val colorMatrix =
+                ColorMatrix(
+                    floatArrayOf(
+                        0.2126f * redStrength,
+                        0.7152f * redStrength,
+                        0.0722f * redStrength,
+                        0f,
+                        0f,
 
-                    0.2126f * greenStrength,
-                    0.7152f * greenStrength,
-                    0.0722f * greenStrength,
-                    0f,
-                    0f,
+                        0.2126f * greenStrength,
+                        0.7152f * greenStrength,
+                        0.0722f * greenStrength,
+                        0f,
+                        0f,
 
-                    0.2126f * blueStrength,
-                    0.7152f * blueStrength,
-                    0.0722f * blueStrength,
-                    0f,
-                    0f,
+                        0.2126f * blueStrength,
+                        0.7152f * blueStrength,
+                        0.0722f * blueStrength,
+                        0f,
+                        0f,
 
-                    0f,
-                    0f,
-                    0f,
-                    1f,
-                    0f
+                        0f,
+                        0f,
+                        0f,
+                        1f,
+                        0f
+                    )
                 )
-            )
 
             bleStatusLed.colorFilter =
-                ColorMatrixColorFilter(colorMatrix)
+                ColorMatrixColorFilter(
+                    colorMatrix
+                )
         }
     }
 
@@ -418,15 +599,19 @@ class MainActivity :
 
             val vibratorManager =
                 getSystemService(
-                    Context.VIBRATOR_MANAGER_SERVICE
+                    Context
+                        .VIBRATOR_MANAGER_SERVICE
                 ) as VibratorManager
 
-            vibratorManager.defaultVibrator.vibrate(
-                VibrationEffect.createOneShot(
-                    50L,
-                    200
+            vibratorManager
+                .defaultVibrator
+                .vibrate(
+                    VibrationEffect
+                        .createOneShot(
+                            50L,
+                            200
+                        )
                 )
-            )
 
         } else {
 
