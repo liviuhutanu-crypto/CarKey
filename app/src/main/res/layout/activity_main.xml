@@ -14,18 +14,35 @@
         android:scaleType="fitCenter"
         android:src="@drawable/cheie" />
 
+
+
     <ImageView
         android:id="@+id/bleStatusLed"
-        android:layout_width="72dp"
-        android:layout_height="72dp"
-        android:layout_marginStart="85dp"
-        android:layout_marginTop="185dp"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_marginStart="65dp"
+        android:layout_marginTop="170dp"
         android:adjustViewBounds="true"
         android:clickable="true"
         android:contentDescription="Bluetooth"
         android:focusable="true"
         android:scaleType="fitCenter"
-        android:src="@drawable/ble" />
+        android:src="@drawable/ble2" />
+
+    <!-- UNLOCK SHADOW -->
+    <ImageView
+        android:id="@+id/unlockShadow"
+        android:layout_width="82dp"
+        android:layout_height="82dp"
+        android:layout_marginStart="135dp"
+        android:layout_marginTop="288dp"
+        android:adjustViewBounds="true"
+        android:clickable="false"
+        android:focusable="false"
+        android:scaleType="fitCenter"
+        android:src="@drawable/unlock"
+        android:tint="#B3000000"
+        android:tintMode="src_in" />
 
     <ImageView
         android:id="@+id/unlockIcon"
@@ -40,6 +57,21 @@
         android:scaleType="fitCenter"
         android:src="@drawable/unlock" />
 
+    <!-- LOCK SHADOW -->
+    <ImageView
+        android:id="@+id/lockShadow"
+        android:layout_width="82dp"
+        android:layout_height="82dp"
+        android:layout_marginStart="137dp"
+        android:layout_marginTop="387dp"
+        android:adjustViewBounds="true"
+        android:clickable="false"
+        android:focusable="false"
+        android:scaleType="fitCenter"
+        android:src="@drawable/lock"
+        android:tint="#B3000000"
+        android:tintMode="src_in" />
+
     <ImageView
         android:id="@+id/lockIcon"
         android:layout_width="80dp"
@@ -52,6 +84,21 @@
         android:focusable="true"
         android:scaleType="fitCenter"
         android:src="@drawable/lock" />
+
+    <!-- TRUNK SHADOW -->
+    <ImageView
+        android:id="@+id/trunkShadow"
+        android:layout_width="82dp"
+        android:layout_height="82dp"
+        android:layout_marginStart="137dp"
+        android:layout_marginTop="477dp"
+        android:adjustViewBounds="true"
+        android:clickable="false"
+        android:focusable="false"
+        android:scaleType="fitCenter"
+        android:src="@drawable/trunk"
+        android:tint="#B3000000"
+        android:tintMode="src_in" />
 
     <ImageView
         android:id="@+id/trunkIcon"
