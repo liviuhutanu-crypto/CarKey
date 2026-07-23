@@ -33,6 +33,8 @@ class MainActivity :
     private lateinit var lockIcon: ImageView
     private lateinit var unlockIcon: ImageView
     private lateinit var trunkIcon: ImageView
+    private lateinit var bluetoothWaveView:
+            BluetoothWaveView
 
     private lateinit var bleManager: BleManager
     private lateinit var bleDeviceDialog: BleDeviceDialog
@@ -189,6 +191,11 @@ class MainActivity :
         setContentView(
             R.layout.activity_main
         )
+
+        bluetoothWaveView =
+            findViewById(
+                R.id.bluetoothWaveView
+            )
 
         registerReceiver(
             bluetoothStateReceiver,
@@ -388,7 +395,7 @@ class MainActivity :
                             this@MainActivity
                         )
 
-                        bleManager.send(
+                        sendBleCommand(
                             pressCommand
                         )
                     }
@@ -406,7 +413,7 @@ class MainActivity :
 
                         pressed = false
 
-                        bleManager.send(
+                        sendBleCommand(
                             releaseCommand
                         )
                     }
@@ -426,7 +433,7 @@ class MainActivity :
 
                         pressed = false
 
-                        bleManager.send(
+                        sendBleCommand(
                             releaseCommand
                         )
                     }
@@ -462,7 +469,7 @@ class MainActivity :
                             this@MainActivity
                         )
 
-                        bleManager.send('P')
+                        sendBleCommand('P')
                     }
 
                     true
@@ -884,6 +891,23 @@ class MainActivity :
 
             @Suppress("DEPRECATION")
             vibrator.vibrate(30L)
+        }
+    }
+
+    private fun sendBleCommand(
+        command: Char
+    ) {
+
+        val commandStarted =
+            bleManager.send(command)
+
+        /*
+         * Undele apar numai când operația BLE
+         * a fost acceptată pentru trimitere.
+         */
+        if (commandStarted) {
+
+            bluetoothWaveView.play()
         }
     }
 
