@@ -1,8 +1,12 @@
 package ro.liviu.carkey
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.ColorMatrix
@@ -16,7 +20,10 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.MotionEvent
 import android.widget.ImageView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 
 class MainActivity :
     AppCompatActivity(),
@@ -36,11 +43,123 @@ class MainActivity :
     private var autoReconnectEnabled = true
     private var isConnected = false
 
+    /*
+     * Dialogul oficial Android pentru pornirea Bluetooth.
+     *
+     * Trebuie declarat în interiorul clasei MainActivity.
+     */
+
+    private val bluetoothStateReceiver =
+        object : BroadcastReceiver() {
+
+            override fun onReceive(
+                context: Context,
+                intent: Intent
+            ) {
+
+                if (
+                    intent.action !=
+                    BluetoothAdapter.ACTION_STATE_CHANGED
+                ) {
+                    return
+                }
+
+                when (
+                    intent.getIntExtra(
+                        BluetoothAdapter.EXTRA_STATE,
+                        BluetoothAdapter.ERROR
+                    )
+                ) {
+
+                    BluetoothAdapter.STATE_OFF -> {
+
+                        isConnected = false
+
+                        bleManager.disconnect()
+
+                        mainHandler.removeCallbacks(
+                            stopAutoConnectScanRunnable
+                        )
+
+                        setBleLedColor("#666666")
+
+                        bleDeviceDialog.dismiss()
+
+                        /*
+                         * După o secundă cerem din nou
+                         * pornirea Bluetooth.
+                         */
+                        mainHandler.postDelayed(
+                            {
+                                ensureBluetoothEnabled()
+                            },
+                            1000L
+                        )
+                    }
+
+                    BluetoothAdapter.STATE_ON -> {
+
+                        startAutoReconnect()
+                    }
+                }
+            }
+        }
+
+    private val enableBluetoothLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+
+            /*
+             * RESULT_OK înseamnă că utilizatorul a acceptat
+             * și Android a terminat activarea Bluetooth.
+             */
+            if (result.resultCode != Activity.RESULT_OK) {
+
+                /*
+                 * Utilizatorul a refuzat sau activarea a eșuat.
+                 * Nu mai afișăm imediat dialogul din nou.
+                 */
+                setBleLedColor("#666666")
+
+                return@registerForActivityResult
+            }
+
+            if (
+                !BluetoothPermissions
+                    .hasPermissions(this)
+            ) {
+                return@registerForActivityResult
+            }
+
+            /*
+             * O mică întârziere oferă sistemului timp să
+             * finalizeze complet inițializarea adaptorului.
+             */
+            mainHandler.postDelayed(
+                {
+                    startAutoReconnect()
+                },
+                500L
+            )
+        }
+
+    /*
+     * Oprește scanarea unei încercări automate
+     * după zece secunde.
+     */
     private val stopAutoConnectScanRunnable =
         Runnable {
+
             bleManager.stopScan()
         }
 
+    /*
+     * Bucla permanentă de reconectare.
+     *
+     * Dacă ESP32 se restartează sau conexiunea se pierde,
+     * aplicația va continua să încerce reconectarea.
+     */
     private val autoReconnectRunnable =
         object : Runnable {
 
@@ -50,6 +169,7 @@ class MainActivity :
                     autoReconnectEnabled &&
                     !isConnected
                 ) {
+
                     autoConnect()
                 }
 
@@ -68,6 +188,13 @@ class MainActivity :
 
         setContentView(
             R.layout.activity_main
+        )
+
+        registerReceiver(
+            bluetoothStateReceiver,
+            IntentFilter(
+                BluetoothAdapter.ACTION_STATE_CHANGED
+            )
         )
 
         bleStatusLed =
@@ -98,11 +225,20 @@ class MainActivity :
         configureKeyButtons()
 
         bleStatusLed.setOnClickListener {
+
             handleBlePressed()
         }
 
         setBleLedColor("#666666")
 
+        /*
+         * Ordinea corectă:
+         *
+         * 1. Cerem permisiunile Bluetooth.
+         * 2. Verificăm dacă Bluetooth este pornit.
+         * 3. Dacă este oprit, afișăm dialogul Android.
+         * 4. După activare, pornim reconectarea automată.
+         */
         if (
             !BluetoothPermissions
                 .hasPermissions(this)
@@ -112,16 +248,92 @@ class MainActivity :
 
         } else {
 
-            mainHandler.post(
-                autoReconnectRunnable
+            ensureBluetoothEnabled()
+        }
+    }
+
+    /*
+     * Verifică Bluetooth și afișează dialogul oficial
+     * Android dacă adaptorul este oprit.
+     */
+    @SuppressLint("MissingPermission")
+    private fun ensureBluetoothEnabled() {
+
+        if (
+            !BluetoothPermissions
+                .hasPermissions(this)
+        ) {
+            return
+        }
+
+        val bluetoothManager =
+            getSystemService(
+                Context.BLUETOOTH_SERVICE
+            ) as BluetoothManager
+
+        val bluetoothAdapter =
+            bluetoothManager.adapter
+
+        /*
+         * Telefonul nu dispune de Bluetooth.
+         */
+        if (bluetoothAdapter == null) {
+
+            setBleLedColor("#666666")
+
+            return
+        }
+
+        if (bluetoothAdapter.isEnabled) {
+
+            /*
+             * Bluetooth era deja pornit.
+             */
+            startAutoReconnect()
+
+        } else {
+
+            /*
+             * Bluetooth este oprit.
+             * Android va afișa dialogul de confirmare.
+             */
+            val enableBluetoothIntent =
+                Intent(
+                    BluetoothAdapter
+                        .ACTION_REQUEST_ENABLE
+                )
+
+            enableBluetoothLauncher.launch(
+                enableBluetoothIntent
             )
         }
     }
 
     /*
+     * Pornește o singură instanță a buclei
+     * de reconectare automată.
+     */
+    private fun startAutoReconnect() {
+
+        if (!autoReconnectEnabled) {
+            return
+        }
+
+        mainHandler.removeCallbacks(
+            autoReconnectRunnable
+        )
+
+        /*
+         * Prima încercare începe imediat.
+         */
+        mainHandler.post(
+            autoReconnectRunnable
+        )
+    }
+
+    /*
      * Configurarea butoanelor telecomenzii.
      */
-
     private fun configureKeyButtons() {
 
         configureMomentaryButton(
@@ -168,6 +380,14 @@ class MainActivity :
                         pressed = true
                         view.isPressed = true
 
+                        /*
+                         * Vibrația funcționează indiferent
+                         * de starea conexiunii Bluetooth.
+                         */
+                        TouchVibration.start(
+                            this@MainActivity
+                        )
+
                         bleManager.send(
                             pressCommand
                         )
@@ -177,6 +397,8 @@ class MainActivity :
                 }
 
                 MotionEvent.ACTION_UP -> {
+
+                    TouchVibration.stop()
 
                     view.isPressed = false
 
@@ -195,6 +417,8 @@ class MainActivity :
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+
+                    TouchVibration.stop()
 
                     view.isPressed = false
 
@@ -234,6 +458,10 @@ class MainActivity :
                         pressed = true
                         view.isPressed = true
 
+                        TouchVibration.start(
+                            this@MainActivity
+                        )
+
                         bleManager.send('P')
                     }
 
@@ -241,6 +469,8 @@ class MainActivity :
                 }
 
                 MotionEvent.ACTION_UP -> {
+
+                    TouchVibration.stop()
 
                     pressed = false
                     view.isPressed = false
@@ -251,6 +481,8 @@ class MainActivity :
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+
+                    TouchVibration.stop()
 
                     pressed = false
                     view.isPressed = false
@@ -263,6 +495,11 @@ class MainActivity :
         }
     }
 
+    /*
+     * Evenimente primite de la BleManager.
+     */
+
+
     private fun handleBlePressed() {
 
         VibrationResponse.button(
@@ -271,10 +508,6 @@ class MainActivity :
 
         bleDeviceDialog.show()
     }
-
-    /*
-     * Evenimente primite de la BleManager.
-     */
 
     @SuppressLint("MissingPermission")
     override fun onDeviceFound(
@@ -320,6 +553,7 @@ class MainActivity :
     override fun onScanStarted() {
 
         if (!isConnected) {
+
             setBleLedColor("#2196F3")
         }
     }
@@ -366,6 +600,10 @@ class MainActivity :
 
         setBleLedColor("#666666")
 
+        /*
+         * La restartarea ESP32 sau pierderea conexiunii,
+         * prima încercare nouă începe după două secunde.
+         */
         scheduleReconnect(
             delayMillis = 2_000L
         )
@@ -401,6 +639,7 @@ class MainActivity :
                 "OK:D",
                 "OK:I",
                 "OK:P" -> {
+
                     vibrateSuccess()
                 }
             }
@@ -408,9 +647,8 @@ class MainActivity :
     }
 
     /*
-     * Permisiuni Bluetooth.
+     * Rezultatul cererii de permisiuni Bluetooth.
      */
-
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -440,22 +678,23 @@ class MainActivity :
                     }
 
         if (!granted) {
+
+            setBleLedColor("#666666")
+
             return
         }
 
-        mainHandler.removeCallbacks(
-            autoReconnectRunnable
-        )
-
-        mainHandler.post(
-            autoReconnectRunnable
-        )
+        /*
+         * După acordarea permisiunilor verificăm
+         * dacă Bluetooth este pornit.
+         */
+        ensureBluetoothEnabled()
     }
 
     /*
      * Reconectare automată.
      */
-
+    @SuppressLint("MissingPermission")
     private fun autoConnect() {
 
         if (isConnected) {
@@ -469,6 +708,26 @@ class MainActivity :
             return
         }
 
+        /*
+         * Nu încercăm scanarea dacă Bluetooth
+         * este momentan oprit.
+         *
+         * Bucla rămâne activă și va încerca din nou
+         * peste 20 de secunde.
+         */
+        val bluetoothManager =
+            getSystemService(
+                Context.BLUETOOTH_SERVICE
+            ) as BluetoothManager
+
+        val bluetoothAdapter =
+            bluetoothManager.adapter
+                ?: return
+
+        if (!bluetoothAdapter.isEnabled) {
+            return
+        }
+
         val lastAddress =
             getSharedPreferences(
                 "CarKey",
@@ -478,6 +737,10 @@ class MainActivity :
                 null
             )
 
+        /*
+         * Nu există încă un dispozitiv memorat.
+         * Utilizatorul îl poate selecta din dialogul BLE.
+         */
         if (lastAddress == null) {
             return
         }
@@ -515,7 +778,6 @@ class MainActivity :
     /*
      * Indicatorul BLE.
      */
-
     private fun setBleLedColor(
         color: String
     ) {
@@ -589,7 +851,6 @@ class MainActivity :
     /*
      * Confirmarea comenzilor.
      */
-
     private fun vibrateSuccess() {
 
         if (
@@ -640,6 +901,10 @@ class MainActivity :
 
         bleDeviceDialog.dismiss()
         bleManager.disconnect()
+
+        unregisterReceiver(
+            bluetoothStateReceiver
+        )
 
         super.onDestroy()
     }
